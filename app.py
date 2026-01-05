@@ -79,20 +79,46 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 4. Processar fatura
+# 4. Mapear agregadores TRON
+# ---------------------------------------------------------
+def mapear_agregadores(df_subtotais):
+    # Mapeamento manual (exemplo baseado no que enviaste)
+    mapa = {
+        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
+        "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
+        "MCDT": "MEIOS AUXILIARES DIAGNOSTICO",
+        "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
+        "PISO DE SALA": "MAPFRE BLOCO OPERATORIO"
+    }
+
+    df_subtotais["Agregador TRON"] = df_subtotais["Secção"].map(mapa).fillna("OUTROS")
+
+    df_agregado = (
+        df_subtotais.groupby("Agregador TRON")["Total declarado (€)"]
+        .sum()
+        .reset_index()
+    )
+
+    total_fatura = df_agregado["Total declarado (€)"].sum()
+
+    # Adicionar linha final
+    df_agregado.loc[len(df_agregado.index)] = ["TOTAL DA FATURA", total_fatura]
+
+    return df_agregado
+
+# ---------------------------------------------------------
+# 5. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas = extrair_linhas(pdf_file)
-
-    st.write("🔍 **Texto extraído do PDF:**")
-    st.write(linhas)
-
     itens = extrair_itens(linhas)
-    st.write("🔍 **Itens identificados (regex):**")
-    st.write(itens)
-
-    if not itens:
-        raise ValueError("Nenhum item foi identificado. O layout pode ter pequenas variações.")
+    subtotais = extrair_subtotais(linhas)
+    agregados = mapear_agregadores(subtotais)
 
     df = pd.DataFrame(itens, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
@@ -103,45 +129,25 @@ def processar_fatura(pdf_file):
         df[col] = df[col].str.replace(",", ".", regex=False)
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    def identificar_secao(desc):
-        d = desc.upper()
-        if "MATERIAL" in d:
-            return "Material"
-        if "EQUIPA" in d:
-            return "Equipa Cirúrgica"
-        if "FÁRMACOS" in d or "MEDI" in d:
-            return "Fármacos"
-        if "MCDT" in d:
-            return "MCDT"
-        return "Outros"
-
-    df["Secção"] = df["Descrição"].apply(identificar_secao)
-
-    resumo = df.groupby("Secção")["Val.Total(c/IVA)"].sum().reset_index()
-
-    subtotais = extrair_subtotais(linhas)
-
-    return df, resumo, subtotais
+    return df, subtotais, agregados
 
 # ---------------------------------------------------------
-# 5. Interface Streamlit
+# 6. Interface Streamlit
 # ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
     try:
-        df, resumo, subtotais = processar_fatura(uploaded_file)
+        df, subtotais, agregados = processar_fatura(uploaded_file)
 
         st.subheader("📑 Itens extraídos")
         st.dataframe(df)
 
-        st.subheader("📊 Totais calculados por Secção")
-        st.dataframe(resumo)
-
         st.subheader("📋 Subtotais declarados na fatura")
         st.dataframe(subtotais)
 
-        st.bar_chart(resumo.set_index("Secção"))
+        st.subheader("📦 Agregadores TRON")
+        st.dataframe(agregados)
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
