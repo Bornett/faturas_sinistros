@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 import re
 
-st.title("📄 Leitor de Faturas Médicas (Texto + Regex + Subtotais)")
+st.title("📄 Leitor de Faturas Médicas")
 
 # ---------------------------------------------------------
 # 1. Extrair texto do PDF página a página
@@ -19,38 +19,62 @@ def extrair_linhas(pdf_file):
     return linhas
 
 # ---------------------------------------------------------
-# 2. Identificar linhas de itens usando regex
+# 2. Extrair itens com regex flexível (6 a 9 valores)
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
+
+    # Captura Data, Código, Descrição e 1–8 números
     padrao = re.compile(
-        r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)"
+        r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+((?:\d+,\d+\s*){1,8})"
     )
+
     for linha in linhas:
         m = padrao.search(linha)
         if m:
-            itens.append(list(m.groups()))
+            data = m.group(1)
+            codigo = m.group(2)
+            descricao = m.group(3)
+            numeros = m.group(4).split()
+
+            # Normalizar para 9 colunas
+            # Qtd, Val.Unit, Val.SIVA, Desconto, IVA, Val.CIVA
+            while len(numeros) < 6:
+                numeros.append("0,00")
+            while len(numeros) < 9:
+                numeros.append("0,00")
+
+            qtd, val_unit, val_siva, desconto, iva, val_civa = numeros[:6]
+
+            itens.append([
+                data, codigo, descricao,
+                qtd, val_unit, val_siva, desconto, iva, val_civa
+            ])
+
     return itens
 
 # ---------------------------------------------------------
-# 3. Identificar subtotais declarados na fatura
+# 3. Extrair subtotais declarados
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
+
     padrao = re.compile(
         r"Contagem e.*?valor.*?\(?€\)?\s*(.*?)\s+(\d+,\d+)\s+.*?(\d+,\d+)"
     )
+
     for linha in linhas:
         m = padrao.search(linha)
         if m:
             nome = m.group(1).strip()
-            qtd = m.group(2).replace(",", ".")
-            total = m.group(3).replace(",", ".")
+            qtd = float(m.group(2).replace(",", "."))
+            total = float(m.group(3).replace(",", "."))
             subtotais.append({
                 "Secção": nome,
-                "Qtd declarada": float(qtd),
-                "Total declarado (€)": float(total)
+                "Qtd declarada": qtd,
+                "Total declarado (€)": total
             })
+
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
@@ -96,7 +120,7 @@ def processar_fatura(pdf_file):
 
     resumo = df.groupby("Secção")["Val.Total(c/IVA)"].sum().reset_index()
 
-    # Extrair subtotais declarados
+    # Subtotais declarados
     subtotais = extrair_subtotais(linhas)
 
     return df, resumo, subtotais
