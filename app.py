@@ -24,7 +24,6 @@ def extrair_linhas(pdf_file):
 def extrair_itens(linhas):
     itens = []
 
-    # Captura Data, Código, Descrição e 1–8 números
     padrao = re.compile(
         r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+((?:\d+,\d+\s*){1,8})"
     )
@@ -37,8 +36,6 @@ def extrair_itens(linhas):
             descricao = m.group(3)
             numeros = m.group(4).split()
 
-            # Normalizar para 9 colunas
-            # Qtd, Val.Unit, Val.SIVA, Desconto, IVA, Val.CIVA
             while len(numeros) < 6:
                 numeros.append("0,00")
             while len(numeros) < 9:
@@ -54,25 +51,29 @@ def extrair_itens(linhas):
     return itens
 
 # ---------------------------------------------------------
-# 3. Extrair subtotais declarados
+# 3. Extrair subtotais declarados (corrigido)
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
 
-    padrao = re.compile(
-        r"Contagem e.*?valor.*?\(?€\)?\s*(.*?)\s+(\d+,\d+)\s+.*?(\d+,\d+)"
-    )
-
     for linha in linhas:
-        m = padrao.search(linha)
-        if m:
-            nome = m.group(1).strip()
-            qtd = float(m.group(2).replace(",", "."))
-            total = float(m.group(3).replace(",", "."))
+        if "Contagem" in linha and "valor" in linha and "€" in linha:
+            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
+            if not nome_match:
+                continue
+            resto = nome_match.group(1)
+
+            numeros = re.findall(r"\d+,\d+", resto)
+            if len(numeros) < 2:
+                continue
+
+            qtd_str = numeros[0]
+            total_str = numeros[-1]
+
             subtotais.append({
-                "Secção": nome,
-                "Qtd declarada": qtd,
-                "Total declarado (€)": total
+                "Secção": resto.split(numeros[0])[0].strip(),
+                "Qtd declarada": float(qtd_str.replace(",", ".")),
+                "Total declarado (€)": float(total_str.replace(",", "."))
             })
 
     return pd.DataFrame(subtotais)
@@ -98,12 +99,10 @@ def processar_fatura(pdf_file):
         "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"
     ])
 
-    # Converter números
     for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"]:
         df[col] = df[col].str.replace(",", ".", regex=False)
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Classificação por secção
     def identificar_secao(desc):
         d = desc.upper()
         if "MATERIAL" in d:
@@ -120,7 +119,6 @@ def processar_fatura(pdf_file):
 
     resumo = df.groupby("Secção")["Val.Total(c/IVA)"].sum().reset_index()
 
-    # Subtotais declarados
     subtotais = extrair_subtotais(linhas)
 
     return df, resumo, subtotais
