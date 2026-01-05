@@ -1,59 +1,74 @@
 import pdfplumber
 import pandas as pd
 import streamlit as st
+import re
 
 st.title("📄 Leitor de Faturas Médicas")
 
-# --------------------------
-# 1. Extrair tabelas do PDF
-# --------------------------
-def extrair_tabelas(pdf_file):
+# ---------------------------------------------------------
+# 1. Extrair texto do PDF página a página
+# ---------------------------------------------------------
+def extrair_linhas(pdf_file):
     linhas = []
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
-            tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    # Guardar apenas linhas com conteúdo
-                    if row and any(cell is not None and cell.strip() != "" for cell in row):
-                        linhas.append(row)
+            texto = page.extract_text()
+            if texto:
+                for linha in texto.split("\n"):
+                    linhas.append(linha.strip())
     return linhas
 
-# --------------------------
-# 2. Processar fatura
-# --------------------------
+# ---------------------------------------------------------
+# 2. Identificar linhas de itens usando regex
+# ---------------------------------------------------------
+def extrair_itens(linhas):
+    itens = []
+
+    # padrão: Data Código Descrição Qtd ValUnit ValTotalSIVA Desc IVA ValTotalCIVA
+    padrao = re.compile(
+        r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)"
+    )
+
+    for linha in linhas:
+        m = padrao.search(linha)
+        if m:
+            itens.append(list(m.groups()))
+
+    return itens
+
+# ---------------------------------------------------------
+# 3. Processar fatura
+# ---------------------------------------------------------
 def processar_fatura(pdf_file):
-    dados = extrair_tabelas(pdf_file)
+    linhas = extrair_linhas(pdf_file)
 
-    # Filtrar apenas linhas com exatamente 9 colunas (linhas de itens reais)
-    dados_validos = [row for row in dados if len(row) == 9]
+    st.write("🔍 **Texto extraído do PDF:**")
+    st.write(linhas)
 
-    if not dados_validos:
-        raise ValueError("Não foram encontradas linhas com 9 colunas no PDF. A estrutura pode ser diferente.")
+    itens = extrair_itens(linhas)
 
-    df = pd.DataFrame(dados_validos, columns=[
+    st.write("🔍 **Itens identificados (regex):**")
+    st.write(itens)
+
+    if not itens:
+        raise ValueError("Nenhum item foi identificado. O layout pode ter pequenas variações.")
+
+    df = pd.DataFrame(itens, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
         "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"
     ])
 
-    # Converter números com vírgula e remover espaços
-    for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Val.Total(c/IVA)"]:
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(",", ".", regex=False)
-            .str.replace(" ", "", regex=False)
-        )
+    # Converter números
+    for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"]:
+        df[col] = df[col].str.replace(",", ".", regex=False)
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Identificar secções
+    # Classificação por secção
     def identificar_secao(desc):
-        if not isinstance(desc, str):
-            return "Outros"
         d = desc.upper()
-        if "MATERIAL DE CONSUMO" in d:
-            return "Material de Consumo"
-        if "EQUIPA CIRURGICA" in d:
+        if "MATERIAL" in d:
+            return "Material"
+        if "EQUIPA" in d:
             return "Equipa Cirúrgica"
         if "FÁRMACOS" in d or "MEDI" in d:
             return "Fármacos"
@@ -67,16 +82,16 @@ def processar_fatura(pdf_file):
 
     return df, resumo
 
-# --------------------------
-# 3. Interface Streamlit
-# --------------------------
+# ---------------------------------------------------------
+# 4. Interface Streamlit
+# ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
     try:
         df, resumo = processar_fatura(uploaded_file)
 
-        st.subheader("📑 Conteúdo extraído")
+        st.subheader("📑 Itens extraídos")
         st.dataframe(df)
 
         st.subheader("📊 Totais por Secção")
@@ -86,6 +101,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
-
-
