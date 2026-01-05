@@ -7,45 +7,56 @@ from io import BytesIO
 st.title("📄 Leitor de Faturas Médicas")
 
 # ---------------------------------------------------------
-# 1. Extrair texto do PDF página a página
+# 1. Extrair texto do PDF (linhas + texto completo)
 # ---------------------------------------------------------
-def extrair_linhas(pdf_file):
+def extrair_linhas_e_texto(pdf_file):
     linhas = []
+    textos_paginas = []
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             texto = page.extract_text()
             if texto:
+                textos_paginas.append(texto)
                 for linha in texto.split("\n"):
                     linhas.append(linha.strip())
-    return linhas
+    texto_completo = "\n".join(textos_paginas)
+    return linhas, texto_completo
 
 # ---------------------------------------------------------
-# 2. Extrair dados do cliente e episódio
+# 2. Extrair dados do cliente e episódio (regex em texto completo)
 # ---------------------------------------------------------
-def extrair_dados_cliente(linhas):
+def extrair_dados_cliente(texto):
     nome = ""
     contribuinte = ""
 
-    for linha in linhas:
-        if linha.startswith("Nome:"):
-            nome = linha.replace("Nome:", "").strip()
-        if "Nr. Contribuinte:" in linha:
-            contribuinte = linha.replace("Nr. Contribuinte:", "").strip()
+    # Nome
+    m_nome = re.search(r"Nome:\s*(.+)", texto)
+    if m_nome:
+        nome = m_nome.group(1).strip()
+
+    # Há NIF da entidade e do cliente; queremos o último (cliente)
+    contribs = re.findall(r"Nr\. Contribuinte:\s*([\d]+)", texto)
+    if contribs:
+        contribuinte = contribs[-1].strip()
 
     return {"Nome": nome, "Contribuinte": contribuinte}
 
-def extrair_dados_episodio(linhas):
+def extrair_dados_episodio(texto):
     apolice = ""
     acidente = ""
     ramo = ""
 
-    for linha in linhas:
-        if "Nr. Apólice:" in linha:
-            apolice = linha.replace("Nr. Apólice:", "").strip()
-        if "Data do Acidente:" in linha:
-            acidente = linha.replace("Data do Acidente:", "").strip()
-        if "Ramo / Motivo:" in linha:
-            ramo = linha.replace("Ramo / Motivo:", "").strip()
+    m_apolice = re.search(r"Nr\. Apólice:\s*([0-9]+)", texto)
+    if m_apolice:
+        apolice = m_apolice.group(1).strip()
+
+    m_acidente = re.search(r"Data do Acidente:\s*([0-9/]+)", texto)
+    if m_acidente:
+        acidente = m_acidente.group(1).strip()
+
+    m_ramo = re.search(r"Ramo\s*/\s*Motivo:\s*([A-Za-zÀ-ÿ\s]+)", texto)
+    if m_ramo:
+        ramo = m_ramo.group(1).strip()
 
     return {"Apólice": apolice, "Data do Acidente": acidente, "Ramo/Motivo": ramo}
 
@@ -135,17 +146,16 @@ def mapear_agregadores(df_subtotais):
     )
 
     total_fatura = df_agregado["Total declarado (€)"].sum()
-
     df_agregado.loc[len(df_agregado.index)] = ["TOTAL DA FATURA", total_fatura]
 
     return df_agregado
 
 # ---------------------------------------------------------
-# 6. Exportar para Excel
+# 6. Exportar para Excel (usar openpyxl)
 # ---------------------------------------------------------
 def exportar_excel(df):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Agregadores TRON")
     return output.getvalue()
 
@@ -153,10 +163,10 @@ def exportar_excel(df):
 # 7. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
-    linhas = extrair_linhas(pdf_file)
+    linhas, texto = extrair_linhas_e_texto(pdf_file)
 
-    dados_cliente = extrair_dados_cliente(linhas)
-    dados_episodio = extrair_dados_episodio(linhas)
+    dados_cliente = extrair_dados_cliente(texto)
+    dados_episodio = extrair_dados_episodio(texto)
 
     itens = extrair_itens(linhas)
     subtotais = extrair_subtotais(linhas)
