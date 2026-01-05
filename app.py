@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 import re
 
-st.title("📄 Leitor de Faturas Médicas")
+st.title("📄 Leitor de Faturas Médicas (Texto + Regex + Subtotais)")
 
 # ---------------------------------------------------------
 # 1. Extrair texto do PDF página a página
@@ -23,21 +23,38 @@ def extrair_linhas(pdf_file):
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
-
-    # padrão: Data Código Descrição Qtd ValUnit ValTotalSIVA Desc IVA ValTotalCIVA
     padrao = re.compile(
         r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+(\d+,\d+)"
     )
-
     for linha in linhas:
         m = padrao.search(linha)
         if m:
             itens.append(list(m.groups()))
-
     return itens
 
 # ---------------------------------------------------------
-# 3. Processar fatura
+# 3. Identificar subtotais declarados na fatura
+# ---------------------------------------------------------
+def extrair_subtotais(linhas):
+    subtotais = []
+    padrao = re.compile(
+        r"Contagem e.*?valor.*?\(?€\)?\s*(.*?)\s+(\d+,\d+)\s+.*?(\d+,\d+)"
+    )
+    for linha in linhas:
+        m = padrao.search(linha)
+        if m:
+            nome = m.group(1).strip()
+            qtd = m.group(2).replace(",", ".")
+            total = m.group(3).replace(",", ".")
+            subtotais.append({
+                "Secção": nome,
+                "Qtd declarada": float(qtd),
+                "Total declarado (€)": float(total)
+            })
+    return pd.DataFrame(subtotais)
+
+# ---------------------------------------------------------
+# 4. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas = extrair_linhas(pdf_file)
@@ -46,7 +63,6 @@ def processar_fatura(pdf_file):
     st.write(linhas)
 
     itens = extrair_itens(linhas)
-
     st.write("🔍 **Itens identificados (regex):**")
     st.write(itens)
 
@@ -80,22 +96,28 @@ def processar_fatura(pdf_file):
 
     resumo = df.groupby("Secção")["Val.Total(c/IVA)"].sum().reset_index()
 
-    return df, resumo
+    # Extrair subtotais declarados
+    subtotais = extrair_subtotais(linhas)
+
+    return df, resumo, subtotais
 
 # ---------------------------------------------------------
-# 4. Interface Streamlit
+# 5. Interface Streamlit
 # ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
     try:
-        df, resumo = processar_fatura(uploaded_file)
+        df, resumo, subtotais = processar_fatura(uploaded_file)
 
         st.subheader("📑 Itens extraídos")
         st.dataframe(df)
 
-        st.subheader("📊 Totais por Secção")
+        st.subheader("📊 Totais calculados por Secção")
         st.dataframe(resumo)
+
+        st.subheader("📋 Subtotais declarados na fatura")
+        st.dataframe(subtotais)
 
         st.bar_chart(resumo.set_index("Secção"))
 
