@@ -14,8 +14,8 @@ def extrair_tabelas(pdf_file):
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    # Filtrar linhas vazias ou com poucas colunas
-                    if row and len(row) >= 3:
+                    # Guardar apenas linhas com conteúdo
+                    if row and any(cell is not None and cell.strip() != "" for cell in row):
                         linhas.append(row)
     return linhas
 
@@ -25,20 +25,26 @@ def extrair_tabelas(pdf_file):
 def processar_fatura(pdf_file):
     dados = extrair_tabelas(pdf_file)
 
-    # Filtrar apenas linhas com 9 colunas (as linhas de itens)
+    # Filtrar apenas linhas com exatamente 9 colunas (linhas de itens reais)
     dados_validos = [row for row in dados if len(row) == 9]
 
     if not dados_validos:
-        raise ValueError("Não foram encontradas tabelas com 9 colunas no PDF.")
+        raise ValueError("Não foram encontradas linhas com 9 colunas no PDF. A estrutura pode ser diferente.")
 
     df = pd.DataFrame(dados_validos, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
         "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"
     ])
 
-    # Converter colunas numéricas
+    # Converter números com vírgula e remover espaços
     for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Val.Total(c/IVA)"]:
-        df[col] = pd.to_numeric(df[col].str.replace(",", "."), errors="coerce")
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.replace(" ", "", regex=False)
+        )
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Identificar secções
     def identificar_secao(desc):
@@ -80,5 +86,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
+
 
 
