@@ -2,6 +2,11 @@ import pdfplumber
 import pandas as pd
 import streamlit as st
 
+st.title("📄 Leitor de Faturas Médicas")
+
+# --------------------------
+# 1. Extrair tabelas do PDF
+# --------------------------
 def extrair_tabelas(pdf_file):
     linhas = []
     with pdfplumber.open(pdf_file) as pdf:
@@ -9,45 +14,71 @@ def extrair_tabelas(pdf_file):
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    linhas.append(row)
+                    # Filtrar linhas vazias ou com poucas colunas
+                    if row and len(row) >= 3:
+                        linhas.append(row)
     return linhas
 
+# --------------------------
+# 2. Processar fatura
+# --------------------------
 def processar_fatura(pdf_file):
     dados = extrair_tabelas(pdf_file)
-    df = pd.DataFrame(dados, columns=[
+
+    # Filtrar apenas linhas com 9 colunas (as linhas de itens)
+    dados_validos = [row for row in dados if len(row) == 9]
+
+    if not dados_validos:
+        raise ValueError("Não foram encontradas tabelas com 9 colunas no PDF.")
+
+    df = pd.DataFrame(dados_validos, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
         "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"
     ])
-    df = df.dropna(how="all")
-    for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Val.Total(c/IVA)"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # Converter colunas numéricas
+    for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Val.Total(c/IVA)"]:
+        df[col] = pd.to_numeric(df[col].str.replace(",", "."), errors="coerce")
+
+    # Identificar secções
     def identificar_secao(desc):
-        if desc is None:
+        if not isinstance(desc, str):
             return "Outros"
-        desc = desc.upper()
-        if "MATERIAL DE CONSUMO" in desc:
+        d = desc.upper()
+        if "MATERIAL DE CONSUMO" in d:
             return "Material de Consumo"
-        if "EQUIPA CIRURGICA" in desc:
+        if "EQUIPA CIRURGICA" in d:
             return "Equipa Cirúrgica"
-        if "FÁRMACOS" in desc or "MEDI" in desc:
+        if "FÁRMACOS" in d or "MEDI" in d:
             return "Fármacos"
-        if "MCDT" in desc:
+        if "MCDT" in d:
             return "MCDT"
         return "Outros"
 
     df["Secção"] = df["Descrição"].apply(identificar_secao)
+
     resumo = df.groupby("Secção")["Val.Total(c/IVA)"].sum().reset_index()
+
     return df, resumo
 
-st.title("📑 Leitor de Faturas Médicas")
-
+# --------------------------
+# 3. Interface Streamlit
+# --------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
-    df, resumo = processar_fatura(uploaded_file)
-    st.subheader("📄 Conteúdo extraído")
-    st.dataframe(df)
-    st.subheader("📊 Totais por Secção")
-    st.dataframe(resumo)
-    st.bar_chart(resumo.set_index("Secção"))
+    try:
+        df, resumo = processar_fatura(uploaded_file)
+
+        st.subheader("📑 Conteúdo extraído")
+        st.dataframe(df)
+
+        st.subheader("📊 Totais por Secção")
+        st.dataframe(resumo)
+
+        st.bar_chart(resumo.set_index("Secção"))
+
+    except Exception as e:
+        st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
+
