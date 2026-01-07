@@ -216,11 +216,13 @@ if uploaded_file:
         st.subheader("📦 Agregadores TRON")
         st.dataframe(agregados)
 
-        excel_bytes = exportar_excel(agregados)
-        st.download_button(
-            label="📥 Exportar Agregadores TRON para Excel",
-            data=excel_bytes,
-            file_name="agregadores_tron.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+       excel_bytes = exportar_excel(agregados)
+       st.download_button(
+           label="📥 Exportar Agregadores TRON para Excel",
+           data=excel_bytes,
+           file_name="agregadores_tron.xlsx",
+           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+       )
+
+
 
