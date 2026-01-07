@@ -54,7 +54,7 @@ def extrair_dados_gerais(texto):
     if m_apolice:
         dados["Apólice"] = m_apolice.group(1).strip()
 
-    m_fatura = re.search(r"Fatura\s+[A-Z]?\s*([A-Z0-9/]+)", texto)
+    m_fatura = re.search(r"Fatura\s+[A-Z]{1,2}\s+([A-Z0-9/]+)", texto)
     if m_fatura:
         dados["Número da Fatura"] = m_fatura.group(1).strip()
 
@@ -105,24 +105,14 @@ def extrair_subtotais(linhas):
     subtotais = []
 
     for linha in linhas:
-        if "Contagem" in linha and "valor" in linha and "€" in linha:
-            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
-            if not nome_match:
-                continue
-            resto = nome_match.group(1)
-
-            numeros = re.findall(r"\d[\d\s]*,\d{2}", resto)
-            if len(numeros) < 2:
-                continue
-
-            qtd_str = numeros[0].replace(" ", "")
-            total_str = numeros[-1].replace(" ", "")
-
-            subtotais.append({
-                "Secção": resto.split(numeros[0])[0].strip(),
-                "Qtd declarada": float(qtd_str.replace(",", ".")),
-                "Total declarado (€)": float(total_str.replace(",", "."))
-            })
+        if "Sub-Total" in linha or "Contagem" in linha:
+            numeros = re.findall(r"\d[\d\s]*,\d{2}", linha)
+            if len(numeros) >= 1:
+                total = numeros[-1].replace(" ", "")
+                subtotais.append({
+                    "Secção": "Subtotal",
+                    "Total declarado (€)": float(total.replace(",", "."))
+                })
 
     return pd.DataFrame(subtotais)
 
@@ -130,29 +120,14 @@ def extrair_subtotais(linhas):
 # 6. Mapear agregadores TRON
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais):
-    mapa = {
-        "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
-        "BLOCO OPERATÓRIO": "MAPFRE BLOCO OPERATORIO",
-        "FARMÁCIA": "FARMACIAS/MEDICAMENTOS",
-        "CONSUMOS": "MAPFRE CONSUMO CIRURGICO",
-        "CIRURGIAS": "MAPFRE CONSUMO CIRURGICO",
-        "ANESTESIA": "MAPFRE CONSUMO CIRURGICO",
-        "RADIOLOGIA CONVENCIONAL": "MEIOS AUXILIARES DIAGNOSTICO",
-        "ANÁLISES CLINICAS": "MEIOS AUXILIARES DIAGNOSTICO"
-    }
+    if df_subtotais.empty:
+        return pd.DataFrame([{"Agregador TRON": "TOTAL DA FATURA", "Total declarado (€)": 0}])
 
-    df_subtotais["Agregador TRON"] = df_subtotais["Secção"].map(mapa).fillna("OUTROS")
+    total_fatura = df_subtotais["Total declarado (€)"].sum()
 
-    df_agregado = (
-        df_subtotais.groupby("Agregador TRON")["Total declarado (€)"]
-        .sum()
-        .reset_index()
-    )
-
-    total_fatura = df_agregado["Total declarado (€)"].sum()
-    df_agregado.loc[len(df_agregado.index)] = ["TOTAL DA FATURA", total_fatura]
-
-    return df_agregado
+    return pd.DataFrame([
+        {"Agregador TRON": "TOTAL DA FATURA", "Total declarado (€)": total_fatura}
+    ])
 
 # ---------------------------------------------------------
 # 7. Exportar para Excel
