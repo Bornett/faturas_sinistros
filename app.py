@@ -214,7 +214,8 @@ if uploaded_file:
         st.table(pd.DataFrame([dados_cliente]))
 
         st.subheader("📘 Dados Gerais")
-        st.table(pd.DataFrame([dados_gerais]))
+        for campo, valor in dados_gerais.items():
+            st.markdown(f"**{campo}:** {valor}")
 
         st.subheader("📑 Itens extraídos")
         st.dataframe(df_itens)
@@ -235,3 +236,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
+
