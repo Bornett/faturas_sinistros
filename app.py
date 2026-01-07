@@ -221,4 +221,5 @@ if uploaded_file:
             label="📥 Exportar Agregadores TRON para Excel",
             data=excel_bytes,
             file_name="agregadores_tron.xlsx",
-            mime="application/vnd
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
