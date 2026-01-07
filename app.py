@@ -7,7 +7,7 @@ from io import BytesIO
 st.title("📄 Leitor de Faturas Médicas")
 
 # ---------------------------------------------------------
-# 1. Extrair texto do PDF (linhas + texto completo)
+# 1. Extrair texto do PDF
 # ---------------------------------------------------------
 def extrair_linhas_e_texto(pdf_file):
     linhas = []
@@ -33,14 +33,14 @@ def extrair_dados_cliente(texto):
     if m_nome:
         nome = m_nome.group(1).strip()
 
-    contribs = re.findall(r"Nr\. Contribuinte:\s*([\d]+)", texto)
-    if contribs:
-        contribuinte = contribs[-1].strip()
+    m_contrib = re.search(r"Dados do cliente[\s\S]*?Nr\. Contribuinte:\s*([0-9]+)", texto)
+    if m_contrib:
+        contribuinte = m_contrib.group(1).strip()
 
     return {"Nome": nome, "Contribuinte": contribuinte}
 
 # ---------------------------------------------------------
-# 3. Extrair Dados Gerais (compatível com vários layouts)
+# 3. Extrair dados gerais
 # ---------------------------------------------------------
 def extrair_dados_gerais(texto):
     dados = {
@@ -54,15 +54,15 @@ def extrair_dados_gerais(texto):
     if m_apolice:
         dados["Apólice"] = m_apolice.group(1).strip()
 
-    m_fatura = re.search(r"Fatura\s+[F]?\s*([A-Z0-9/]+)", texto)
+    m_fatura = re.search(r"Fatura\s+[A-Z]?\s*([A-Z0-9/]+)", texto)
     if m_fatura:
         dados["Número da Fatura"] = m_fatura.group(1).strip()
 
-    m_emissao = re.search(r"Data de emissão:\s*([0-9\-\/]+)", texto)
-    if m_emissao:
-        dados["Data da Fatura"] = m_emissao.group(1).strip()
+    m_vencimento = re.search(r"Data de vencimento\s*([0-9/]+)", texto)
+    if m_vencimento:
+        dados["Data da Fatura"] = m_vencimento.group(1).strip()
 
-    m_processo = re.search(r"Tipo\s*/\s*número\s*interno:\s*([A-Z0-9/]+)", texto, re.IGNORECASE)
+    m_processo = re.search(r"Nr\. Beneficiário:\s*([0-9]+)", texto)
     if m_processo:
         dados["Número do Processo"] = m_processo.group(1).strip()
 
@@ -73,9 +73,8 @@ def extrair_dados_gerais(texto):
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
-
     padrao = re.compile(
-        r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+((?:\d+,\d+\s*){1,8})"
+        r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+((?:\d[\d\s]*,\d{2}\s*){1,8})"
     )
 
     for linha in linhas:
@@ -86,9 +85,8 @@ def extrair_itens(linhas):
             descricao = m.group(3)
             numeros = m.group(4).split()
 
+            numeros = [n.replace(" ", "") for n in numeros]
             while len(numeros) < 6:
-                numeros.append("0,00")
-            while len(numeros) < 9:
                 numeros.append("0,00")
 
             qtd, val_unit, val_siva, desconto, iva, val_civa = numeros[:6]
@@ -101,7 +99,7 @@ def extrair_itens(linhas):
     return itens
 
 # ---------------------------------------------------------
-# 5. Extrair subtotais declarados
+# 5. Extrair subtotais
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
@@ -113,12 +111,12 @@ def extrair_subtotais(linhas):
                 continue
             resto = nome_match.group(1)
 
-            numeros = re.findall(r"\d+,\d+", resto)
+            numeros = re.findall(r"\d[\d\s]*,\d{2}", resto)
             if len(numeros) < 2:
                 continue
 
-            qtd_str = numeros[0]
-            total_str = numeros[-1]
+            qtd_str = numeros[0].replace(" ", "")
+            total_str = numeros[-1].replace(" ", "")
 
             subtotais.append({
                 "Secção": resto.split(numeros[0])[0].strip(),
@@ -133,16 +131,14 @@ def extrair_subtotais(linhas):
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais):
     mapa = {
-        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
-        "MCDT": "MEIOS AUXILIARES DIAGNOSTICO",
-        "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
-        "PISO DE SALA": "MAPFRE BLOCO OPERATORIO"
+        "BLOCO OPERATÓRIO": "MAPFRE BLOCO OPERATORIO",
+        "FARMÁCIA": "FARMACIAS/MEDICAMENTOS",
+        "CONSUMOS": "MAPFRE CONSUMO CIRURGICO",
+        "CIRURGIAS": "MAPFRE CONSUMO CIRURGICO",
+        "ANESTESIA": "MAPFRE CONSUMO CIRURGICO",
+        "RADIOLOGIA CONVENCIONAL": "MEIOS AUXILIARES DIAGNOSTICO",
+        "ANÁLISES CLINICAS": "MEIOS AUXILIARES DIAGNOSTICO"
     }
 
     df_subtotais["Agregador TRON"] = df_subtotais["Secção"].map(mapa).fillna("OUTROS")
@@ -227,4 +223,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
