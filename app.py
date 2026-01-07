@@ -40,13 +40,11 @@ def extrair_dados_cliente(texto):
     return {"Nome": nome, "Contribuinte": contribuinte}
 
 # ---------------------------------------------------------
-# 3. Extrair Dados Gerais (nova secção)
+# 3. Extrair Dados Gerais (compatível com vários layouts)
 # ---------------------------------------------------------
 def extrair_dados_gerais(texto):
     dados = {
         "Apólice": "",
-        "Data do Acidente": "",
-        "Ramo/Motivo": "",
         "Número da Fatura": "",
         "Data da Fatura": "",
         "Número do Processo": ""
@@ -56,23 +54,15 @@ def extrair_dados_gerais(texto):
     if m_apolice:
         dados["Apólice"] = m_apolice.group(1).strip()
 
-    m_acidente = re.search(r"Data do Acidente:\s*([0-9/]+)", texto)
-    if m_acidente:
-        dados["Data do Acidente"] = m_acidente.group(1).strip()
-
-    m_ramo = re.search(r"Ramo\s*/\s*Motivo:\s*([A-Za-zÀ-ÿ]+)", texto)
-    if m_ramo:
-        dados["Ramo/Motivo"] = m_ramo.group(1).strip()
-
-    m_fatura = re.search(r"Fatura\s+FT\s+([A-Z0-9/]+)", texto)
+    m_fatura = re.search(r"Fatura\s+[F]?\s*([A-Z0-9/]+)", texto)
     if m_fatura:
         dados["Número da Fatura"] = m_fatura.group(1).strip()
 
-    m_emissao = re.search(r"Data de emissão:\s*([0-9\-]+)", texto)
+    m_emissao = re.search(r"Data de emissão:\s*([0-9\-\/]+)", texto)
     if m_emissao:
         dados["Data da Fatura"] = m_emissao.group(1).strip()
 
-    m_processo = re.search(r"Tipo\s*/\s*Número:\s*([0-9]+)", texto)
+    m_processo = re.search(r"Tipo\s*/\s*número\s*interno:\s*([A-Z0-9/]+)", texto, re.IGNORECASE)
     if m_processo:
         dados["Número do Processo"] = m_processo.group(1).strip()
 
@@ -231,10 +221,4 @@ if uploaded_file:
             label="📥 Exportar Agregadores TRON para Excel",
             data=excel_bytes,
             file_name="agregadores_tron.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-    except Exception as e:
-        st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
-
+            mime="application/vnd
