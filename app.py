@@ -23,17 +23,9 @@ def extrair_linhas_e_texto(pdf_file):
     return linhas, texto_completo
 
 # ---------------------------------------------------------
-# 2. Detetar tipologia de fatura
+# 2. Extrair dados do cliente
 # ---------------------------------------------------------
-def detectar_tipologia(texto):
-    if "Nr. Beneficiário" in texto or "Data de vencimento" in texto:
-        return "nova"
-    return "antiga"
-
-# ---------------------------------------------------------
-# 3. Extrair dados do cliente - tipologia ANTIGA
-# ---------------------------------------------------------
-def extrair_dados_cliente_antiga(texto):
+def extrair_dados_cliente(texto):
     nome = ""
     contribuinte = ""
 
@@ -48,26 +40,9 @@ def extrair_dados_cliente_antiga(texto):
     return {"Nome": nome, "Contribuinte": contribuinte}
 
 # ---------------------------------------------------------
-# 4. Extrair dados do cliente - tipologia NOVA
+# 3. Extrair Dados Gerais (nova secção)
 # ---------------------------------------------------------
-def extrair_dados_cliente_nova(texto):
-    nome = ""
-    contribuinte = ""
-
-    m_nome = re.search(r"Nome:\s*(.+)", texto)
-    if m_nome:
-        nome = m_nome.group(1).strip()
-
-    m_contrib = re.search(r"Dados do cliente[\s\S]*?Nr\. Contribuinte:\s*([0-9]+)", texto)
-    if m_contrib:
-        contribuinte = m_contrib.group(1).strip()
-
-    return {"Nome": nome, "Contribuinte": contribuinte}
-
-# ---------------------------------------------------------
-# 5. Extrair Dados Gerais - tipologia ANTIGA
-# ---------------------------------------------------------
-def extrair_dados_gerais_antiga(texto):
+def extrair_dados_gerais(texto):
     dados = {
         "Apólice": "",
         "Data do Acidente": "",
@@ -104,38 +79,7 @@ def extrair_dados_gerais_antiga(texto):
     return dados
 
 # ---------------------------------------------------------
-# 6. Extrair Dados Gerais - tipologia NOVA
-# ---------------------------------------------------------
-def extrair_dados_gerais_nova(texto):
-    dados = {
-        "Apólice": "",
-        "Data do Acidente": "",
-        "Ramo/Motivo": "",
-        "Número da Fatura": "",
-        "Data da Fatura": "",
-        "Número do Processo": ""
-    }
-
-    m_apolice = re.search(r"Nr\. Apólice:\s*([0-9]+)", texto)
-    if m_apolice:
-        dados["Apólice"] = m_apolice.group(1).strip()
-
-    m_fatura = re.search(r"Fatura\s+[A-Z]{1,2}\s+([A-Z0-9/]+)", texto)
-    if m_fatura:
-        dados["Número da Fatura"] = m_fatura.group(1).strip()
-
-    m_vencimento = re.search(r"Data de vencimento\s*([0-9/]+)", texto)
-    if m_vencimento:
-        dados["Data da Fatura"] = m_vencimento.group(1).strip()
-
-    m_processo = re.search(r"Nr\. Beneficiário:\s*([0-9]+)", texto)
-    if m_processo:
-        dados["Número do Processo"] = m_processo.group(1).strip()
-
-    return dados
-
-# ---------------------------------------------------------
-# 7. Extrair itens (comum às duas tipologias)
+# 4. Extrair itens
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
@@ -167,9 +111,9 @@ def extrair_itens(linhas):
     return itens
 
 # ---------------------------------------------------------
-# 8. Extrair subtotais declarados - tipologia ANTIGA
+# 5. Extrair subtotais declarados
 # ---------------------------------------------------------
-def extrair_subtotais_antiga(linhas):
+def extrair_subtotais(linhas):
     subtotais = []
 
     for linha in linhas:
@@ -195,27 +139,9 @@ def extrair_subtotais_antiga(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 9. Extrair subtotais declarados - tipologia NOVA
+# 6. Mapear agregadores TRON
 # ---------------------------------------------------------
-def extrair_subtotais_nova(linhas):
-    subtotais = []
-
-    for linha in linhas:
-        if "Sub-Total" in linha:
-            numeros = re.findall(r"\d[\d\s]*,\d{2}", linha)
-            if len(numeros) >= 1:
-                total_str = numeros[-1].replace(" ", "")
-                subtotais.append({
-                    "Secção": "Sub-Total",
-                    "Total declarado (€)": float(total_str.replace(",", "."))
-                })
-
-    return pd.DataFrame(subtotais)
-
-# ---------------------------------------------------------
-# 10. Mapear agregadores TRON - tipologia ANTIGA
-# ---------------------------------------------------------
-def mapear_agregadores_antiga(df_subtotais):
+def mapear_agregadores(df_subtotais):
     mapa = {
         "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
@@ -243,19 +169,7 @@ def mapear_agregadores_antiga(df_subtotais):
     return df_agregado
 
 # ---------------------------------------------------------
-# 11. Mapear agregadores TRON - tipologia NOVA
-# ---------------------------------------------------------
-def mapear_agregadores_nova(df_subtotais):
-    if df_subtotais.empty:
-        return pd.DataFrame([{"Agregador TRON": "TOTAL DA FATURA", "Total declarado (€)": 0}])
-
-    total_fatura = df_subtotais["Total declarado (€)"].sum()
-    return pd.DataFrame([
-        {"Agregador TRON": "TOTAL DA FATURA", "Total declarado (€)": total_fatura}
-    ])
-
-# ---------------------------------------------------------
-# 12. Exportar para Excel
+# 7. Exportar para Excel
 # ---------------------------------------------------------
 def exportar_excel(df):
     output = BytesIO()
@@ -264,24 +178,17 @@ def exportar_excel(df):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 13. Processar fatura
+# 8. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas, texto = extrair_linhas_e_texto(pdf_file)
-    tipo = detectar_tipologia(texto)
 
-    if tipo == "nova":
-        dados_cliente = extrair_dados_cliente_nova(texto)
-        dados_gerais = extrair_dados_gerais_nova(texto)
-        subtotais = extrair_subtotais_nova(linhas)
-        agregados = mapear_agregadores_nova(subtotais)
-    else:
-        dados_cliente = extrair_dados_cliente_antiga(texto)
-        dados_gerais = extrair_dados_gerais_antiga(texto)
-        subtotais = extrair_subtotais_antiga(linhas)
-        agregados = mapear_agregadores_antiga(subtotais)
+    dados_cliente = extrair_dados_cliente(texto)
+    dados_gerais = extrair_dados_gerais(texto)
 
     itens = extrair_itens(linhas)
+    subtotais = extrair_subtotais(linhas)
+    agregados = mapear_agregadores(subtotais)
 
     df_itens = pd.DataFrame(itens, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
@@ -292,22 +199,21 @@ def processar_fatura(pdf_file):
         df_itens[col] = df_itens[col].str.replace(",", ".", regex=False)
         df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
 
-    return tipo, dados_cliente, dados_gerais, df_itens, subtotais, agregados
+    return dados_cliente, dados_gerais, df_itens, subtotais, agregados
 
 # ---------------------------------------------------------
-# 14. Interface Streamlit
+# 9. Interface Streamlit
 # ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
     try:
-        tipo, dados_cliente, dados_gerais, df_itens, subtotais, agregados = processar_fatura(uploaded_file)
+        dados_cliente, dados_gerais, df_itens, subtotais, agregados = processar_fatura(uploaded_file)
 
         st.subheader("👤 Dados do Cliente")
         st.table(pd.DataFrame([dados_cliente]))
 
         st.subheader("📘 Dados Gerais")
-        st.markdown(f"**Tipologia detetada:** {tipo.upper()}")
         for campo, valor in dados_gerais.items():
             st.markdown(f"**{campo}:** {valor}")
 
