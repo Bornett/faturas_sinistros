@@ -29,12 +29,10 @@ def extrair_dados_cliente(texto):
     nome = ""
     contribuinte = ""
 
-    # Nome
     m_nome = re.search(r"Nome:\s*(.+)", texto)
     if m_nome:
         nome = m_nome.group(1).strip()
 
-    # Há NIF da entidade e do cliente; queremos o último (cliente)
     contribs = re.findall(r"Nr\. Contribuinte:\s*([\d]+)", texto)
     if contribs:
         contribuinte = contribs[-1].strip()
@@ -54,7 +52,8 @@ def extrair_dados_episodio(texto):
     if m_acidente:
         acidente = m_acidente.group(1).strip()
 
-    m_ramo = re.search(r"Ramo\s*/\s*Motivo:\s*([A-Za-zÀ-ÿ\s]+)", texto)
+    # CORREÇÃO: capturar apenas a primeira palavra após "Ramo / Motivo:"
+    m_ramo = re.search(r"Ramo\s*/\s*Motivo:\s*([A-Za-zÀ-ÿ]+)", texto)
     if m_ramo:
         ramo = m_ramo.group(1).strip()
 
@@ -151,7 +150,7 @@ def mapear_agregadores(df_subtotais):
     return df_agregado
 
 # ---------------------------------------------------------
-# 6. Exportar para Excel (usar openpyxl)
+# 6. Exportar para Excel (openpyxl)
 # ---------------------------------------------------------
 def exportar_excel(df):
     output = BytesIO()
