@@ -225,6 +225,6 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-
-
+    except Exception as e:
+        st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
 
