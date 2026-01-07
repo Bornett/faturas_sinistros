@@ -23,7 +23,7 @@ def extrair_linhas_e_texto(pdf_file):
     return linhas, texto_completo
 
 # ---------------------------------------------------------
-# 2. Extrair dados do cliente e episódio (regex em texto completo)
+# 2. Extrair dados do cliente
 # ---------------------------------------------------------
 def extrair_dados_cliente(texto):
     nome = ""
@@ -39,28 +39,47 @@ def extrair_dados_cliente(texto):
 
     return {"Nome": nome, "Contribuinte": contribuinte}
 
-def extrair_dados_episodio(texto):
-    apolice = ""
-    acidente = ""
-    ramo = ""
+# ---------------------------------------------------------
+# 3. Extrair Dados Gerais (nova secção)
+# ---------------------------------------------------------
+def extrair_dados_gerais(texto):
+    dados = {
+        "Apólice": "",
+        "Data do Acidente": "",
+        "Ramo/Motivo": "",
+        "Número da Fatura": "",
+        "Data da Fatura": "",
+        "Número do Processo": ""
+    }
 
     m_apolice = re.search(r"Nr\. Apólice:\s*([0-9]+)", texto)
     if m_apolice:
-        apolice = m_apolice.group(1).strip()
+        dados["Apólice"] = m_apolice.group(1).strip()
 
     m_acidente = re.search(r"Data do Acidente:\s*([0-9/]+)", texto)
     if m_acidente:
-        acidente = m_acidente.group(1).strip()
+        dados["Data do Acidente"] = m_acidente.group(1).strip()
 
-    # CORREÇÃO: capturar apenas a primeira palavra após "Ramo / Motivo:"
     m_ramo = re.search(r"Ramo\s*/\s*Motivo:\s*([A-Za-zÀ-ÿ]+)", texto)
     if m_ramo:
-        ramo = m_ramo.group(1).strip()
+        dados["Ramo/Motivo"] = m_ramo.group(1).strip()
 
-    return {"Apólice": apolice, "Data do Acidente": acidente, "Ramo/Motivo": ramo}
+    m_fatura = re.search(r"Fatura\s+FT\s+([A-Z0-9/]+)", texto)
+    if m_fatura:
+        dados["Número da Fatura"] = m_fatura.group(1).strip()
+
+    m_emissao = re.search(r"Data de emissão:\s*([0-9\-]+)", texto)
+    if m_emissao:
+        dados["Data da Fatura"] = m_emissao.group(1).strip()
+
+    m_processo = re.search(r"Tipo\s*/\s*Número:\s*([0-9]+)", texto)
+    if m_processo:
+        dados["Número do Processo"] = m_processo.group(1).strip()
+
+    return dados
 
 # ---------------------------------------------------------
-# 3. Extrair itens com regex flexível
+# 4. Extrair itens
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
@@ -92,7 +111,7 @@ def extrair_itens(linhas):
     return itens
 
 # ---------------------------------------------------------
-# 4. Extrair subtotais declarados
+# 5. Extrair subtotais declarados
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
@@ -120,7 +139,7 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 5. Mapear agregadores TRON
+# 6. Mapear agregadores TRON
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais):
     mapa = {
@@ -150,7 +169,7 @@ def mapear_agregadores(df_subtotais):
     return df_agregado
 
 # ---------------------------------------------------------
-# 6. Exportar para Excel (openpyxl)
+# 7. Exportar para Excel
 # ---------------------------------------------------------
 def exportar_excel(df):
     output = BytesIO()
@@ -159,13 +178,13 @@ def exportar_excel(df):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 7. Processar fatura
+# 8. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas, texto = extrair_linhas_e_texto(pdf_file)
 
     dados_cliente = extrair_dados_cliente(texto)
-    dados_episodio = extrair_dados_episodio(texto)
+    dados_gerais = extrair_dados_gerais(texto)
 
     itens = extrair_itens(linhas)
     subtotais = extrair_subtotais(linhas)
@@ -180,22 +199,22 @@ def processar_fatura(pdf_file):
         df_itens[col] = df_itens[col].str.replace(",", ".", regex=False)
         df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
 
-    return dados_cliente, dados_episodio, df_itens, subtotais, agregados
+    return dados_cliente, dados_gerais, df_itens, subtotais, agregados
 
 # ---------------------------------------------------------
-# 8. Interface Streamlit
+# 9. Interface Streamlit
 # ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
 if uploaded_file:
     try:
-        dados_cliente, dados_episodio, df_itens, subtotais, agregados = processar_fatura(uploaded_file)
+        dados_cliente, dados_gerais, df_itens, subtotais, agregados = processar_fatura(uploaded_file)
 
         st.subheader("👤 Dados do Cliente")
         st.table(pd.DataFrame([dados_cliente]))
 
-        st.subheader("📘 Dados do Episódio")
-        st.table(pd.DataFrame([dados_episodio]))
+        st.subheader("📘 Dados Gerais")
+        st.table(pd.DataFrame([dados_gerais]))
 
         st.subheader("📑 Itens extraídos")
         st.dataframe(df_itens)
