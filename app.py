@@ -179,18 +179,20 @@ codigos_tron = {
 def detetar_subtipo_mcdt(descricao):
     desc = descricao.upper()
 
-    if "EMG" in desc:
+    # Ordem importa: siglas mais longas primeiro
+    if re.search(r"\bEMG\b", desc):
         return "EMG"
-    if "ECO" in desc:
+    if re.search(r"\bECO\b", desc):
         return "ECO"
-    if "TC" in desc:
+    if re.search(r"\bTC\b", desc):
         return "TC"
-    if "RX" in desc:
+    if re.search(r"\bRX\b", desc):
         return "RX"
-    if "RM" in desc:
+    if re.search(r"\bRM\b", desc):
         return "RM"
 
     return None
+
 
 # ---------------------------------------------------------
 # 6. Mapear agregadores TRON (com MCDT desdobrado)
@@ -358,4 +360,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
