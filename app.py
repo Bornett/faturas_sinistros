@@ -203,11 +203,8 @@ def mapear_agregadores(df_subtotais, df_itens):
     mapa = {
         # ENFERMAGEM CONTRATADA — secções 21, 22, 29
         "21 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
-        "21 - MATERIAL DE CON": "ENFERMAGEM CONTRATADA",
         "22 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
-        "22 - MATERIAL DE CON": "ENFERMAGEM CONTRATADA",
         "29 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
-        "29 - MATERIAL DE CON": "ENFERMAGEM CONTRATADA",
 
         # Outras regras já existentes
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
@@ -236,8 +233,9 @@ def mapear_agregadores(df_subtotais, df_itens):
 
         # ---------------------------------------------------------
         # 1) Secções 21, 22, 29 → ENFERMAGEM CONTRATADA
+        # (regex seguro: só apanha 21, 22, 29)
         # ---------------------------------------------------------
-        if secao.startswith(("21", "22", "29")):
+        if re.match(r"^(21|22|29)\b", secao):
             linhas_agregadas.append({
                 "Descrição TRON": "ENFERMAGEM CONTRATADA",
                 "Código TRON": codigos_tron["ENFERMAGEM CONTRATADA"],
@@ -330,6 +328,7 @@ def mapear_agregadores(df_subtotais, df_itens):
 
 
 
+
 # ---------------------------------------------------------
 # 7. Exportar para Excel
 # ---------------------------------------------------------
@@ -398,6 +397,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
