@@ -116,7 +116,6 @@ def extrair_itens(linhas):
 def extrair_subtotais(linhas):
     subtotais = []
 
-    # Padrão EXATO das linhas de subtotal
     padrao = re.compile(
         r"Contagem e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$"
     )
@@ -125,14 +124,8 @@ def extrair_subtotais(linhas):
         m = padrao.search(linha)
         if m:
             secao = m.group(1).strip()
-            total_str = m.group(2).strip()
-
-            total = float(total_str.replace(",", "."))
-
-            subtotais.append({
-                "Secção": secao,
-                "Total declarado (€)": total
-            })
+            total = float(m.group(2).replace(",", "."))
+            subtotais.append({"Secção": secao, "Total declarado (€)": total})
 
     return pd.DataFrame(subtotais)
 
@@ -311,20 +304,21 @@ def mapear_agregadores(df_subtotais, df_itens):
     # ---------------------------------------------------------
     # 4) Agrupamento final por Código TRON
     # ---------------------------------------------------------
-    df_final = pd.DataFrame(linhas_agregadas)
+df_final = pd.DataFrame(linhas_agregadas)
 
-    df_final = (
-        df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False)
-                .agg({"Total declarado (€)": "sum"})
-    )
+if df_final.empty:
+    df_final = pd.DataFrame([
+        {"Descrição TRON": "OUTROS", "Código TRON": codigos_tron["OUTROS"], "Total declarado (€)": 0}
+    ])
 
-    # ---------------------------------------------------------
-    # 5) Total da fatura
-    # ---------------------------------------------------------
-    total_fatura = df_final["Total declarado (€)"].sum()
-    df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
+df_final = df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False).sum()
 
-    return df_final
+total_fatura = df_final["Total declarado (€)"].sum()
+df_final.loc[len(df_final)] = ["TOTAL DA FATURA", "", total_fatura]
+
+return df_final
+
+
 
 
 
@@ -397,6 +391,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
