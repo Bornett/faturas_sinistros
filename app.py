@@ -186,8 +186,11 @@ def mapear_agregadores(df_subtotais):
     # ➕ Adicionar coluna Código TRON
     df_agregado["Código TRON"] = df_agregado["Agregador TRON"].map(codigos_tron)
 
+    # ➕ Renomear coluna
+    df_agregado = df_agregado.rename(columns={"Agregador TRON": "Descrição TRON"})
+
     # Reordenar colunas
-    df_agregado = df_agregado[["Código TRON", "Agregador TRON", "Total declarado (€)"]]
+    df_agregado = df_agregado[["Código TRON", "Descrição TRON", "Total declarado (€)"]]
 
     return df_agregado
 
@@ -259,4 +262,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
