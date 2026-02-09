@@ -116,8 +116,9 @@ def extrair_itens(linhas):
 def extrair_subtotais(linhas):
     subtotais = []
 
+    # Padrão EXATO das linhas de subtotal
     padrao = re.compile(
-        r"Contagem e.*?valor.*?\€\)?\s*(.*?)\s+(\d+,\d+)\s*$"
+        r"Contagem e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$"
     )
 
     for linha in linhas:
@@ -126,7 +127,6 @@ def extrair_subtotais(linhas):
             secao = m.group(1).strip()
             total_str = m.group(2).strip()
 
-            # Converter vírgula para ponto
             total = float(total_str.replace(",", "."))
 
             subtotais.append({
@@ -135,6 +135,7 @@ def extrair_subtotais(linhas):
             })
 
     return pd.DataFrame(subtotais)
+
 
 
 # ---------------------------------------------------------
@@ -396,6 +397,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
