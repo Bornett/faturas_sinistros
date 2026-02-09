@@ -203,19 +203,23 @@ def mapear_agregadores(df_subtotais, df_itens):
         "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
+
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
         "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
         "PISO DE SALA": "MAPFRE BLOCO OPERATORIO",
 
+        # Consultas
         "CONSULTA EXTERNA": "CONSULTAS ESPECIALIDADE",
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
 
+        # Material ortopédico
         "28 - MATERIAL DE CONSUMO CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "28 - MATERIAL DE CON": "MATERIAL ORTOPEDICO",
         "28 - MATERIAL DE CONSUMO": "MATERIAL ORTOPEDICO",
 
+        # MCDT genérico (fallback)
         "MCDT": "MEIOS AUXILIARES DIAGNOSTICO"
     }
 
@@ -238,6 +242,7 @@ def mapear_agregadores(df_subtotais, df_itens):
                     subtotais_mcdt.setdefault(subtipo, 0)
                     subtotais_mcdt[subtipo] += item["Val.Total(s/IVA)"]
 
+            # Se não encontrou subtipo → vai para o genérico
             if not subtotais_mcdt:
                 linhas_agregadas.append({
                     "Descrição TRON": "MEIOS AUXILIARES DIAGNOSTICO",
@@ -246,6 +251,7 @@ def mapear_agregadores(df_subtotais, df_itens):
                 })
                 continue
 
+            # Criar linhas TRON por subtipo
             for subtipo, valor in subtotais_mcdt.items():
                 agregador = mcdt_subtipos[subtipo]
                 codigo = codigos_tron[agregador]
@@ -268,12 +274,21 @@ def mapear_agregadores(df_subtotais, df_itens):
             "Total declarado (€)": total
         })
 
+    # Criar DataFrame
     df_final = pd.DataFrame(linhas_agregadas)
 
+    # 🔥 AGRUPAR POR CÓDIGO TRON + DESCRIÇÃO TRON
+    df_final = (
+        df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False)
+                .agg({"Total declarado (€)": "sum"})
+    )
+
+    # ➕ Adicionar total da fatura
     total_fatura = df_final["Total declarado (€)"].sum()
     df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
 
     return df_final
+
 
 # ---------------------------------------------------------
 # 7. Exportar para Excel
@@ -343,3 +358,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
