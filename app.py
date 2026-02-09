@@ -40,7 +40,7 @@ def extrair_dados_cliente(texto):
     return {"Nome": nome, "Contribuinte": contribuinte}
 
 # ---------------------------------------------------------
-# 3. Extrair Dados Gerais (nova secção)
+# 3. Extrair Dados Gerais
 # ---------------------------------------------------------
 def extrair_dados_gerais(texto):
     dados = {
@@ -139,7 +139,18 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# Dicionário de códigos TRON
+# Subtipos MCDT → Agregadores TRON
+# ---------------------------------------------------------
+mcdt_subtipos = {
+    "RM": "MEIOS AUX DIAGNOST RMN",
+    "RX": "MEIOS AUXILIAR DIAG RX",
+    "EMG": "MEIOS AUX DIAGNOST EMG",
+    "TC": "MEIOS AUX DIAGNOST TAC",
+    "ECO": "MEIOS AUX DIAGNOST ECOGRAFIA"
+}
+
+# ---------------------------------------------------------
+# Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
     "MAPFRE CONSUMO CIRURGICO": "247",
@@ -147,15 +158,44 @@ codigos_tron = {
     "MEIOS AUXILIARES DIAGNOSTICO": "217",
     "FARMACIAS/MEDICAMENTOS": "206",
     "MAPFRE BLOCO OPERATORIO": "245",
+
+    "CONSULTAS ESPECIALIDADE": "252",
+    "CONSULTAS AT. PERMANENTE": "251",
+    "MATERIAL ORTOPEDICO": "213",
+
+    "MEIOS AUX DIAGNOST RMN": "238",
+    "MEIOS AUXILIAR DIAG RX": "218",
+    "MEIOS AUX DIAGNOST EMG": "240",
+    "MEIOS AUX DIAGNOST TAC": "237",
+    "MEIOS AUX DIAGNOST ECOGRAFIA": "239",
+
     "OUTROS": "",
-    "TOTAL DA FATURA": ""  # sem código
+    "TOTAL DA FATURA": ""
 }
 
+# ---------------------------------------------------------
+# Função para detetar subtipo MCDT
+# ---------------------------------------------------------
+def detetar_subtipo_mcdt(descricao):
+    desc = descricao.upper()
+
+    if "EMG" in desc:
+        return "EMG"
+    if "ECO" in desc:
+        return "ECO"
+    if "TC" in desc:
+        return "TC"
+    if "RX" in desc:
+        return "RX"
+    if "RM" in desc:
+        return "RM"
+
+    return None
 
 # ---------------------------------------------------------
-# 6. Mapear agregadores TRON
+# 6. Mapear agregadores TRON (com MCDT desdobrado)
 # ---------------------------------------------------------
-def mapear_agregadores(df_subtotais):
+def mapear_agregadores(df_subtotais, df_itens):
     mapa = {
         "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
@@ -164,35 +204,76 @@ def mapear_agregadores(df_subtotais):
         "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
-        "MCDT": "MEIOS AUXILIARES DIAGNOSTICO",
         "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
-        "PISO DE SALA": "MAPFRE BLOCO OPERATORIO"
+        "PISO DE SALA": "MAPFRE BLOCO OPERATORIO",
+
+        "CONSULTA EXTERNA": "CONSULTAS ESPECIALIDADE",
+        "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
+
+        "28 - MATERIAL DE CONSUMO CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
+        "CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
+        "MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
+        "28 - MATERIAL DE CON": "MATERIAL ORTOPEDICO",
+        "28 - MATERIAL DE CONSUMO": "MATERIAL ORTOPEDICO",
+
+        "MCDT": "MEIOS AUXILIARES DIAGNOSTICO"
     }
 
-    # Mapear agregadores
-    df_subtotais["Agregador TRON"] = df_subtotais["Secção"].map(mapa).fillna("OUTROS")
+    linhas_agregadas = []
 
-    # Agregar valores
-    df_agregado = (
-        df_subtotais.groupby("Agregador TRON")["Total declarado (€)"]
-        .sum()
-        .reset_index()
-    )
+    for _, row in df_subtotais.iterrows():
+        secao = row["Secção"]
+        total = row["Total declarado (€)"]
 
-    # Total da fatura
-    total_fatura = df_agregado["Total declarado (€)"].sum()
-    df_agregado.loc[len(df_agregado.index)] = ["TOTAL DA FATURA", total_fatura]
+        # --- Caso especial: MCDT ---
+        if "MCDT" in secao.upper():
 
-    # ➕ Adicionar coluna Código TRON
-    df_agregado["Código TRON"] = df_agregado["Agregador TRON"].map(codigos_tron)
+            subtotais_mcdt = {}
 
-    # ➕ Renomear coluna
-    df_agregado = df_agregado.rename(columns={"Agregador TRON": "Descrição TRON"})
+            for _, item in df_itens.iterrows():
+                descricao = item["Descrição"]
+                subtipo = detetar_subtipo_mcdt(descricao)
 
-    # Reordenar colunas
-    df_agregado = df_agregado[["Código TRON", "Descrição TRON", "Total declarado (€)"]]
+                if subtipo:
+                    subtotais_mcdt.setdefault(subtipo, 0)
+                    subtotais_mcdt[subtipo] += item["Val.Total(s/IVA)"]
 
-    return df_agregado
+            if not subtotais_mcdt:
+                linhas_agregadas.append({
+                    "Descrição TRON": "MEIOS AUXILIARES DIAGNOSTICO",
+                    "Código TRON": codigos_tron["MEIOS AUXILIARES DIAGNOSTICO"],
+                    "Total declarado (€)": total
+                })
+                continue
+
+            for subtipo, valor in subtotais_mcdt.items():
+                agregador = mcdt_subtipos[subtipo]
+                codigo = codigos_tron[agregador]
+
+                linhas_agregadas.append({
+                    "Descrição TRON": agregador,
+                    "Código TRON": codigo,
+                    "Total declarado (€)": valor
+                })
+
+            continue
+
+        # --- Caso normal ---
+        agregador = mapa.get(secao, "OUTROS")
+        codigo = codigos_tron.get(agregador, "TR999")
+
+        linhas_agregadas.append({
+            "Descrição TRON": agregador,
+            "Código TRON": codigo,
+            "Total declarado (€)": total
+        })
+
+    df_final = pd.DataFrame(linhas_agregadas)
+
+    total_fatura = df_final["Total declarado (€)"].sum()
+    df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
+
+    return df_final
 
 # ---------------------------------------------------------
 # 7. Exportar para Excel
@@ -213,9 +294,6 @@ def processar_fatura(pdf_file):
     dados_gerais = extrair_dados_gerais(texto)
 
     itens = extrair_itens(linhas)
-    subtotais = extrair_subtotais(linhas)
-    agregados = mapear_agregadores(subtotais)
-
     df_itens = pd.DataFrame(itens, columns=[
         "Data", "Código", "Descrição", "Qtd", "Val.Unitário",
         "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"
@@ -224,6 +302,9 @@ def processar_fatura(pdf_file):
     for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"]:
         df_itens[col] = df_itens[col].str.replace(",", ".", regex=False)
         df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
+
+    subtotais = extrair_subtotais(linhas)
+    agregados = mapear_agregadores(subtotais, df_itens)
 
     return dados_cliente, dados_gerais, df_itens, subtotais, agregados
 
@@ -262,5 +343,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
-
