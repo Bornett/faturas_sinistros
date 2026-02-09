@@ -116,27 +116,26 @@ def extrair_itens(linhas):
 def extrair_subtotais(linhas):
     subtotais = []
 
+    padrao = re.compile(
+        r"Contagem e.*?valor.*?\€\)?\s*(.*?)\s+(\d+,\d+)\s*$"
+    )
+
     for linha in linhas:
-        if "Contagem" in linha and "valor" in linha and "€" in linha:
-            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
-            if not nome_match:
-                continue
-            resto = nome_match.group(1)
+        m = padrao.search(linha)
+        if m:
+            secao = m.group(1).strip()
+            total_str = m.group(2).strip()
 
-            numeros = re.findall(r"\d+,\d+", resto)
-            if len(numeros) < 2:
-                continue
-
-            qtd_str = numeros[0]
-            total_str = numeros[-1]
+            # Converter vírgula para ponto
+            total = float(total_str.replace(",", "."))
 
             subtotais.append({
-                "Secção": resto.split(numeros[0])[0].strip(),
-                "Qtd declarada": float(qtd_str.replace(",", ".")),
-                "Total declarado (€)": float(total_str.replace(",", "."))
+                "Secção": secao,
+                "Total declarado (€)": total
             })
 
     return pd.DataFrame(subtotais)
+
 
 # ---------------------------------------------------------
 # Subtipos MCDT → Agregadores TRON
@@ -397,6 +396,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
