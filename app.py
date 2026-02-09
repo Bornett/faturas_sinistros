@@ -304,24 +304,19 @@ def mapear_agregadores(df_subtotais, df_itens):
     # ---------------------------------------------------------
     # 4) Agrupamento final por Código TRON
     # ---------------------------------------------------------
-df_final = pd.DataFrame(linhas_agregadas)
+        df_final = pd.DataFrame(linhas_agregadas)
 
-if df_final.empty:
-    df_final = pd.DataFrame([
-        {"Descrição TRON": "OUTROS", "Código TRON": codigos_tron["OUTROS"], "Total declarado (€)": 0}
-    ])
+        if df_final.empty:
+            df_final = pd.DataFrame([
+                {"Descrição TRON": "OUTROS", "Código TRON": codigos_tron["OUTROS"], "Total declarado (€)": 0}
+            ])
 
-df_final = df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False).sum()
+        df_final = df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False).sum()
 
-total_fatura = df_final["Total declarado (€)"].sum()
-df_final.loc[len(df_final)] = ["TOTAL DA FATURA", "", total_fatura]
+        total_fatura = df_final["Total declarado (€)"].sum()
+        df_final.loc[len(df_final)] = ["TOTAL DA FATURA", "", total_fatura]
 
-return df_final
-
-
-
-
-
+        return df_final
 
 # ---------------------------------------------------------
 # 7. Exportar para Excel
@@ -391,6 +386,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
