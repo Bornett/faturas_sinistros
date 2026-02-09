@@ -169,6 +169,8 @@ codigos_tron = {
     "MEIOS AUX DIAGNOST TAC": "237",
     "MEIOS AUX DIAGNOST ECOGRAFIA": "239",
 
+    "ENFERMAGEM CONTRATADA": "204",
+
     "OUTROS": "",
     "TOTAL DA FATURA": ""
 }
@@ -396,6 +398,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
 
 
