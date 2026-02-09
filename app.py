@@ -139,6 +139,20 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
+# Dicionário de códigos TRON
+# ---------------------------------------------------------
+codigos_tron = {
+    "MAPFRE CONSUMO CIRURGICO": "247",
+    "MAPFRE EQUIPA CIRURGICA": "243",
+    "MEIOS AUXILIARES DIAGNOSTICO": "217",
+    "FARMACIAS/MEDICAMENTOS": "206",
+    "MAPFRE BLOCO OPERATORIO": "245",
+    "OUTROS": "",
+    "TOTAL DA FATURA": ""  # sem código
+}
+
+
+# ---------------------------------------------------------
 # 6. Mapear agregadores TRON
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais):
@@ -155,16 +169,25 @@ def mapear_agregadores(df_subtotais):
         "PISO DE SALA": "MAPFRE BLOCO OPERATORIO"
     }
 
+    # Mapear agregadores
     df_subtotais["Agregador TRON"] = df_subtotais["Secção"].map(mapa).fillna("OUTROS")
 
+    # Agregar valores
     df_agregado = (
         df_subtotais.groupby("Agregador TRON")["Total declarado (€)"]
         .sum()
         .reset_index()
     )
 
+    # Total da fatura
     total_fatura = df_agregado["Total declarado (€)"].sum()
     df_agregado.loc[len(df_agregado.index)] = ["TOTAL DA FATURA", total_fatura]
+
+    # ➕ Adicionar coluna Código TRON
+    df_agregado["Código TRON"] = df_agregado["Agregador TRON"].map(codigos_tron)
+
+    # Reordenar colunas
+    df_agregado = df_agregado[["Código TRON", "Agregador TRON", "Total declarado (€)"]]
 
     return df_agregado
 
@@ -236,3 +259,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
