@@ -117,41 +117,17 @@ def extrair_itens(linhas):
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
-    buffer = ""
 
-    for i, linha in enumerate(linhas):
+    padrao = re.compile(
+        r"Contagem e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$"
+    )
 
-        # Junta "Contagem e" com a linha seguinte
-        if re.search(r"\bContagem\s+e\b", linha):
-            if i + 1 < len(linhas):
-                linha_completa = linha + " " + linhas[i+1]
-            else:
-                linha_completa = linha
-        else:
-            linha_completa = linha
-
-        # Procurar padrão "Contagem e valor (€)"
-        if "Contagem" in linha_completa and "valor" in linha_completa and "€" in linha_completa:
-
-            # Extrair nome da secção
-            nome_match = re.search(r"valor\s*\(€\)\s*(.*)", linha_completa)
-            if not nome_match:
-                continue
-
-            secao_raw = nome_match.group(1).strip()
-            secao = normalizar_secao(secao_raw)
-
-            # Procurar total na própria linha OU na linha seguinte
-            numeros = re.findall(r"\d+,\d+", linha_completa)
-
-            if not numeros and i + 1 < len(linhas):
-                numeros = re.findall(r"\d+,\d+", linhas[i+1])
-
-            if not numeros:
-                continue
-
-            total = float(numeros[-1].replace(",", "."))
-
+    for linha in linhas:
+        m = padrao.search(linha)
+        if m:
+            secao = m.group(1).strip()
+            total_str = m.group(2).strip()
+            total = float(total_str.replace(",", "."))
             subtotais.append({
                 "Secção": secao,
                 "Total declarado (€)": total
@@ -426,4 +402,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
 
