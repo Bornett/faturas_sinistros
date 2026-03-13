@@ -119,37 +119,43 @@ def extrair_subtotais(linhas):
     subtotais = []
     buffer = ""
 
-    for linha in linhas:
+    for i, linha in enumerate(linhas):
 
+        # Junta "Contagem e" com a linha seguinte
         if re.search(r"\bContagem\s+e\b", linha):
-            buffer = linha
-            continue
+            if i + 1 < len(linhas):
+                linha_completa = linha + " " + linhas[i+1]
+            else:
+                linha_completa = linha
+        else:
+            linha_completa = linha
 
-        if buffer and "valor (€)" in linha:
-            linha = buffer + " " + linha
-            buffer = ""
+        # Procurar padrão "Contagem e valor (€)"
+        if "Contagem" in linha_completa and "valor" in linha_completa and "€" in linha_completa:
 
-        m1 = re.search(
-            r"Contagem\s+e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$",
-            linha
-        )
-        if m1:
-            secao = normalizar_secao(m1.group(1).strip())
-            total = float(m1.group(2).replace(",", "."))
-            subtotais.append({"Secção": secao, "Total declarado (€)": total})
-            continue
+            # Extrair nome da secção
+            nome_match = re.search(r"valor\s*\(€\)\s*(.*)", linha_completa)
+            if not nome_match:
+                continue
 
-        m2 = re.search(
-            r"Contagem\s+e\s+valor\s+\(€\)\s+(.*?)(\s+\d+,\d+)",
-            linha
-        )
-        if m2:
-            secao = normalizar_secao(m2.group(1).strip())
-            numeros = re.findall(r"\d+,\d+", linha)
-            if numeros:
-                total = float(numeros[0].replace(",", "."))
-                subtotais.append({"Secção": secao, "Total declarado (€)": total})
-            continue
+            secao_raw = nome_match.group(1).strip()
+            secao = normalizar_secao(secao_raw)
+
+            # Procurar total na própria linha OU na linha seguinte
+            numeros = re.findall(r"\d+,\d+", linha_completa)
+
+            if not numeros and i + 1 < len(linhas):
+                numeros = re.findall(r"\d+,\d+", linhas[i+1])
+
+            if not numeros:
+                continue
+
+            total = float(numeros[-1].replace(",", "."))
+
+            subtotais.append({
+                "Secção": secao,
+                "Total declarado (€)": total
+            })
 
     return pd.DataFrame(subtotais)
 
@@ -420,3 +426,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
