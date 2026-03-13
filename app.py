@@ -147,17 +147,17 @@ mcdt_subtipos = {
     "EMG": "MEIOS AUX DIAGNOST EMG",
     "TC": "MEIOS AUX DIAGNOST TAC",
     "ECO": "MEIOS AUX DIAGNOST ECOGRAFIA",
-    "OUTROS": "MEIOS AUXILIAR DIAGNOST - OUTROS"   # ← ECG
+    "OUTROS": "MEIOS AUXILIAR DIAGNOST - OUTROS"   # ECG
 }
 
 # ---------------------------------------------------------
 # Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
-    "MAPFRE CONSUM CIRURGIA": "247",   # ← renomeado
+    "MAPFRE CONSUM CIRURGIA": "247",
     "MAPFRE EQUIPA CIRURGICA": "243",
     "MEIOS AUXILIARES DIAGNOSTICO": "217",
-    "MEIOS AUXILIAR DIAGNOST - OUTROS": "217",   # ← ECG
+    "MEIOS AUXILIAR DIAGNOST - OUTROS": "217",
     "FARMACIAS/MEDICAMENTOS": "206",
     "MAPFRE BLOCO OPERATORIO": "245",
 
@@ -178,15 +178,15 @@ codigos_tron = {
 }
 
 # ---------------------------------------------------------
-# Função para detetar subtipo MCDT
+# Detetar subtipo MCDT
 # ---------------------------------------------------------
 def detetar_subtipo_mcdt(descricao):
     desc = descricao.upper()
 
+    if "ECG" in desc or "ELECTROCARDIO" in desc:
+        return "OUTROS"
     if re.search(r"\bEMG\b", desc):
         return "EMG"
-    if "ECG" in desc or "ELECTROCARDIO" in desc:
-        return "OUTROS"   # ← ECG vai para OUTROS
     if re.search(r"\bECO\b", desc):
         return "ECO"
     if re.search(r"\bTC\b", desc):
@@ -202,6 +202,7 @@ def detetar_subtipo_mcdt(descricao):
 # 6. Mapear agregadores TRON
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais, df_itens):
+
     mapa = {
         "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
         "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
@@ -232,10 +233,20 @@ def mapear_agregadores(df_subtotais, df_itens):
         secao = row["Secção"]
         total = row["Total declarado (€)"]
 
+        # -------------------------
+        # MCDT — agora filtrado corretamente
+        # -------------------------
         if "MCDT" in secao.upper():
-            subtotais_mcdt = {}
 
-            for _, item in df_itens.iterrows():
+            # Filtrar apenas os itens que pertencem ao bloco MCDT
+            itens_mcdt = df_itens[
+                df_itens["Descrição"].str.contains("ECG|ELECTROCARDIO|MCDT", case=False, na=False)
+            ]
+
+            subtotais_mcdt = {}
+            soma_subtipos = 0.0
+
+            for _, item in itens_mcdt.iterrows():
                 descricao = item["Descrição"]
                 subtipo = detetar_subtipo_mcdt(descricao)
 
@@ -243,7 +254,9 @@ def mapear_agregadores(df_subtotais, df_itens):
                     subtotais_mcdt.setdefault(subtipo, 0.0)
                     valor_item = float(item["Val.Total(s/IVA)"]) if pd.notna(item["Val.Total(s/IVA)"]) else 0.0
                     subtotais_mcdt[subtipo] += valor_item
+                    soma_subtipos += valor_item
 
+            # Se não houver subtipos → tudo para ENFERMAGEM
             if not subtotais_mcdt:
                 linhas_agregadas.append({
                     "Descrição TRON": "ENFERMAGEM CONTRATADA",
@@ -252,22 +265,18 @@ def mapear_agregadores(df_subtotais, df_itens):
                 })
                 continue
 
-            soma_subtipos = 0.0
+            # Subtipos (RM, RX, TC, EMG, ECO, OUTROS)
             for subtipo, valor in subtotais_mcdt.items():
-                if subtipo in mcdt_subtipos:
-                    agregador = mcdt_subtipos[subtipo]
-                else:
-                    continue
-
+                agregador = mcdt_subtipos[subtipo]
                 codigo = codigos_tron[agregador]
-                soma_subtipos += valor
 
                 linhas_agregadas.append({
                     "Descrição TRON": agregador,
                     "Código TRON": codigo,
-                    "Total declarado (€)": valor
+                    "Total declarado (€)": round(valor, 2)
                 })
 
+            # Resto → ENFERMAGEM
             resto = round(total - soma_subtipos, 2)
             if resto > 0:
                 linhas_agregadas.append({
@@ -278,6 +287,9 @@ def mapear_agregadores(df_subtotais, df_itens):
 
             continue
 
+        # -------------------------
+        # Caso normal
+        # -------------------------
         agregador = mapa.get(secao, "OUTROS")
         codigo = codigos_tron.get(agregador, "TR999")
 
@@ -290,11 +302,10 @@ def mapear_agregadores(df_subtotais, df_itens):
     df_final = pd.DataFrame(linhas_agregadas)
 
     if df_final.empty:
-        df_final = pd.DataFrame(
+        return pd.DataFrame(
             [["TOTAL DA FATURA", "", 0.0]],
             columns=["Descrição TRON", "Código TRON", "Total declarado (€)"]
         )
-        return df_final
 
     df_final = (
         df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False)
