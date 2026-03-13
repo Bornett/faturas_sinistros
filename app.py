@@ -147,7 +147,7 @@ mcdt_subtipos = {
     "EMG": "MEIOS AUX DIAGNOST EMG",
     "TC": "MEIOS AUX DIAGNOST TAC",
     "ECO": "MEIOS AUX DIAGNOST ECOGRAFIA",
-    "OUTROS": "MEIOS AUXILIAR DIAGNOST - OUTROS"   # ECG
+    "OUTROS": "MEIOS AUXILIAR DIAGNOST - OUTROS"
 }
 
 # ---------------------------------------------------------
@@ -343,8 +343,13 @@ def processar_fatura(pdf_file):
 
     if not df_itens.empty:
         for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"]:
-            df_itens[col] = df_itens[col].astype(str).str.replace(",", ".", regex=False)
-            df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
+            df_itens[col] = (
+                df_itens[col]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .pipe(pd.to_numeric, errors="coerce")
+                .round(2)  # ← CORREÇÃO DO PROBLEMA DOS 15,95
+            )
 
     subtotais = extrair_subtotais(linhas)
     agregados = mapear_agregadores(subtotais, df_itens)
