@@ -115,28 +115,36 @@ def extrair_itens(linhas):
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
+    buffer = ""
 
     for linha in linhas:
-        if "Contagem" in linha and "valor" in linha and "€" in linha:
-            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
-            if not nome_match:
-                continue
-            resto = nome_match.group(1)
+        # Junta linhas partidas (ex: "Contagem e" + "valor (€) MCDT")
+        if "Contagem" in linha:
+            buffer = linha
+            continue
 
-            numeros = re.findall(r"\d+,\d+", resto)
-            if len(numeros) < 2:
-                continue
+        if buffer:
+            linha = buffer + " " + linha
+            buffer = ""
 
-            qtd_str = numeros[0]
-            total_str = numeros[-1]
+        if "valor" in linha and "€" in linha:
+            numeros = re.findall(r"\d+,\d+", linha)
+            if len(numeros) >= 2:
+                qtd_str = numeros[0]
+                total_str = numeros[-1]
 
-            subtotais.append({
-                "Secção": resto.split(numeros[0])[0].strip(),
-                "Qtd declarada": float(qtd_str.replace(",", ".")),
-                "Total declarado (€)": float(total_str.replace(",", "."))
-            })
+                # Extrair nome da secção
+                secao = re.sub(r"Contagem.*?valor.*?€\)?", "", linha)
+                secao = secao.replace(qtd_str, "").strip()
+
+                subtotais.append({
+                    "Secção": secao,
+                    "Qtd declarada": float(qtd_str.replace(",", ".")),
+                    "Total declarado (€)": float(total_str.replace(",", "."))
+                })
 
     return pd.DataFrame(subtotais)
+
 
 # ---------------------------------------------------------
 # Subtipos MCDT → Agregadores TRON (mantemos, se quiseres evoluir depois)
@@ -365,3 +373,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
