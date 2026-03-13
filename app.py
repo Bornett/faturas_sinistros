@@ -153,7 +153,7 @@ mcdt_subtipos = {
 # Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
-    "MAPFRE CONSUMO CIRURGICO": "247",
+    "MAPFRE CONSUM CIRURGIA": "247",
     "MAPFRE EQUIPA CIRURGICA": "243",
     "MEIOS AUXILIARES DIAGNOSTICO": "217",
     "MEIOS AUXILIAR DIAGNOST - OUTROS": "217",
@@ -203,12 +203,12 @@ def detetar_subtipo_mcdt(descricao):
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais, df_itens):
     mapa = {
-        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
+        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
+        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
+        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
+        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
+        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
+        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUM CIRURGIA",
 
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
         "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
@@ -365,3 +365,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
