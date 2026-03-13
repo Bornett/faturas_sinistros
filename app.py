@@ -139,22 +139,21 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# Subtipos MCDT → Agregadores TRON
+# Subtipos MCDT → Agregadores TRON (mantemos, se quiseres evoluir depois)
 # ---------------------------------------------------------
 mcdt_subtipos = {
     "RM": "MEIOS AUX DIAGNOST RMN",
     "RX": "MEIOS AUXILIAR DIAG RX",
     "EMG": "MEIOS AUX DIAGNOST EMG",
     "TC": "MEIOS AUX DIAGNOST TAC",
-    "ECO": "MEIOS AUX DIAGNOST ECOGRAFIA",
-    "OUTROS": "MEIOS AUXILIAR DIAGNOST - OUTROS"
+    "ECO": "MEIOS AUX DIAGNOST ECOGRAFIA"
 }
 
 # ---------------------------------------------------------
 # Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
-    "MAPFRE CONSUM CIRURGIA": "247",
+    "MAPFRE CONSUMO CIRURGICO": "247",
     "MAPFRE EQUIPA CIRURGICA": "243",
     "MEIOS AUXILIARES DIAGNOSTICO": "217",
     "MEIOS AUXILIAR DIAGNOST - OUTROS": "217",
@@ -178,13 +177,11 @@ codigos_tron = {
 }
 
 # ---------------------------------------------------------
-# Detetar subtipo MCDT
+# Função para detetar subtipo MCDT (se um dia quiseres voltar a desdobrar)
 # ---------------------------------------------------------
 def detetar_subtipo_mcdt(descricao):
     desc = descricao.upper()
 
-    if "ECG" in desc or "ELECTROCARDIO" in desc:
-        return "OUTROS"
     if re.search(r"\bEMG\b", desc):
         return "EMG"
     if re.search(r"\bECO\b", desc):
@@ -200,16 +197,17 @@ def detetar_subtipo_mcdt(descricao):
 
 # ---------------------------------------------------------
 # 6. Mapear agregadores TRON
+#    - SEM recalcular valores (usa sempre o total visível no PDF)
+#    - MCDT ELECTROCARDIOGRAMA → 217 com o total da secção
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais, df_itens):
-
     mapa = {
-        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
-        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
-        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
-        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
-        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUM CIRURGIA",
-        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUM CIRURGIA",
+        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
 
         "EQUIPA CIRURGICA": "MAPFRE EQUIPA CIRURGICA",
         "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
@@ -230,71 +228,43 @@ def mapear_agregadores(df_subtotais, df_itens):
     linhas_agregadas = []
 
     for _, row in df_subtotais.iterrows():
-        secao = row["Secção"]
-        total = row["Total declarado (€)"]
+        secao = str(row["Secção"])
+        total = float(row["Total declarado (€)"])
 
-        # -------------------------
-        # MCDT — agora filtrado corretamente
-        # -------------------------
+        # --- Caso especial: MCDT ---
         if "MCDT" in secao.upper():
+            # Queremos sempre o valor visível no PDF (total da secção)
+            # e, neste caso, se houver ELECTROCARDIOGRAMA - ECG, vai para 217
+            tem_ecg = False
+            for _, item in df_itens.iterrows():
+                desc_item = str(item.get("Descrição", "")).upper()
+                if "ELECTROCARDIOGRAMA - ECG" in desc_item:
+                    tem_ecg = True
+                    break
 
-            # Filtrar apenas os itens que pertencem ao bloco MCDT
-            inicio = df_itens.index[df_itens["Descrição"].str.contains("^MCDT$", case=False, na=False)]
-            fim = df_itens.index[df_itens["Descrição"].str.contains("Contagem e valor.*MCDT", case=False, na=False)]
-
-            if len(inicio) > 0 and len(fim) > 0:
-                itens_mcdt = df_itens.loc[inicio[0]+1 : fim[0]-1]
+            if tem_ecg:
+                linhas_agregadas.append({
+                    "Descrição TRON": "MEIOS AUXILIAR DIAGNOST - OUTROS",
+                    "Código TRON": codigos_tron["MEIOS AUXILIAR DIAGNOST - OUTROS"],
+                    "Total declarado (€)": total
+                })
             else:
-                itens_mcdt = pd.DataFrame()
-
-            subtotais_mcdt = {}
-            soma_subtipos = 0.0
-
-            for _, item in itens_mcdt.iterrows():
-                descricao = item["Descrição"]
-                subtipo = detetar_subtipo_mcdt(descricao)
-
-                if subtipo:
-                    subtotais_mcdt.setdefault(subtipo, 0.0)
-                    valor_item = float(item["Val.Total(s/IVA)"]) if pd.notna(item["Val.Total(s/IVA)"]) else 0.0
-                    subtotais_mcdt[subtipo] += valor_item
-                    soma_subtipos += valor_item
-
-            # Se não houver subtipos → tudo para ENFERMAGEM
-            if not subtotais_mcdt:
+                # Se algum dia houver MCDT sem ECG, cai aqui (podes ajustar depois)
                 linhas_agregadas.append({
                     "Descrição TRON": "ENFERMAGEM CONTRATADA",
                     "Código TRON": codigos_tron["ENFERMAGEM CONTRATADA"],
                     "Total declarado (€)": total
                 })
-                continue
-
-            # Subtipos (RM, RX, TC, EMG, ECO, OUTROS)
-            for subtipo, valor in subtotais_mcdt.items():
-                agregador = mcdt_subtipos[subtipo]
-                codigo = codigos_tron[agregador]
-
-                linhas_agregadas.append({
-                    "Descrição TRON": agregador,
-                    "Código TRON": codigo,
-                    "Total declarado (€)": round(valor, 2)
-                })
-
-            # Resto → ENFERMAGEM
-            resto = round(total - soma_subtipos, 2)
-            if resto > 0:
-                linhas_agregadas.append({
-                    "Descrição TRON": "ENFERMAGEM CONTRATADA",
-                    "Código TRON": codigos_tron["ENFERMAGEM CONTRATADA"],
-                    "Total declarado (€)": resto
-                })
 
             continue
 
-        # -------------------------
-        # Caso normal
-        # -------------------------
-        agregador = mapa.get(secao, "OUTROS")
+        # --- Caso normal ---
+        agregador = "OUTROS"
+        for chave, destino in mapa.items():
+            if chave.upper() in secao.upper():
+                agregador = destino
+                break
+
         codigo = codigos_tron.get(agregador, "TR999")
 
         linhas_agregadas.append({
@@ -303,19 +273,24 @@ def mapear_agregadores(df_subtotais, df_itens):
             "Total declarado (€)": total
         })
 
+    # Criar DataFrame
     df_final = pd.DataFrame(linhas_agregadas)
 
+    # Se não há linhas, devolve só TOTAL DA FATURA = 0
     if df_final.empty:
-        return pd.DataFrame(
+        df_final = pd.DataFrame(
             [["TOTAL DA FATURA", "", 0.0]],
             columns=["Descrição TRON", "Código TRON", "Total declarado (€)"]
         )
+        return df_final
 
+    # Agrupar por Código TRON + Descrição TRON
     df_final = (
         df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False)
                 .agg({"Total declarado (€)": "sum"})
     )
 
+    # Adicionar total da fatura (soma simples, sem mexer nos valores)
     total_fatura = df_final["Total declarado (€)"].sum()
     df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
 
@@ -347,13 +322,8 @@ def processar_fatura(pdf_file):
 
     if not df_itens.empty:
         for col in ["Qtd", "Val.Unitário", "Val.Total(s/IVA)", "Desconto", "IVA", "Val.Total(c/IVA)"]:
-            df_itens[col] = (
-                df_itens[col]
-                .astype(str)
-                .str.replace(",", ".", regex=False)
-                .str.extract(r"(\d+\.\d{1,2})")[0]   # ← FORÇA VALORES VISÍVEIS
-                .astype(float)
-            )
+            df_itens[col] = df_itens[col].astype(str).str.replace(",", ".", regex=False)
+            df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
 
     subtotais = extrair_subtotais(linhas)
     agregados = mapear_agregadores(subtotais, df_itens)
