@@ -111,29 +111,24 @@ def extrair_itens(linhas):
     return itens
 
 # ---------------------------------------------------------
-# 5. Extrair subtotais declarados
+# 5. Extrair subtotais declarados (versão robusta)
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
 
+    padrao = re.compile(
+        r"Contagem e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$"
+    )
+
     for linha in linhas:
-        if "Contagem" in linha and "valor" in linha and "€" in linha:
-            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
-            if not nome_match:
-                continue
-            resto = nome_match.group(1)
-
-            numeros = re.findall(r"\d+,\d+", resto)
-            if len(numeros) < 2:
-                continue
-
-            qtd_str = numeros[0]
-            total_str = numeros[-1]
-
+        m = padrao.search(linha)
+        if m:
+            secao = m.group(1).strip()
+            total_str = m.group(2).strip()
+            total = float(total_str.replace(",", "."))
             subtotais.append({
-                "Secção": resto.split(numeros[0])[0].strip(),
-                "Qtd declarada": float(qtd_str.replace(",", ".")),
-                "Total declarado (€)": float(total_str.replace(",", "."))
+                "Secção": secao,
+                "Total declarado (€)": total
             })
 
     return pd.DataFrame(subtotais)
@@ -169,7 +164,9 @@ codigos_tron = {
     "MEIOS AUX DIAGNOST TAC": "237",
     "MEIOS AUX DIAGNOST ECOGRAFIA": "239",
 
-    "OUTROS": "",
+    "ENFERMAGEM CONTRATADA": "204",
+
+    "OUTROS": "TR999",
     "TOTAL DA FATURA": ""
 }
 
@@ -179,7 +176,6 @@ codigos_tron = {
 def detetar_subtipo_mcdt(descricao):
     desc = descricao.upper()
 
-    # Ordem importa: siglas mais longas primeiro
     if re.search(r"\bEMG\b", desc):
         return "EMG"
     if re.search(r"\bECO\b", desc):
@@ -193,16 +189,16 @@ def detetar_subtipo_mcdt(descricao):
 
     return None
 
-
 # ---------------------------------------------------------
-# 6. Mapear agregadores TRON (com MCDT desdobrado)
+# 6. Mapear agregadores TRON (com ENFERMAGEM + MCDT ajustado)
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais, df_itens):
     mapa = {
-        "29 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "23 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "21 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
-        "22 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
+        # Agora 21/22/23/29 vão para ENFERMAGEM CONTRATADA
+        "29 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
+        "23 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
+        "21 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
+        "22 - MATERIAL DE CONSUMO": "ENFERMAGEM CONTRATADA",
         "24 - MATERIAL DE CONSUMO": "MAPFRE CONSUMO CIRURGICO",
         "19 - FÁRMACOS - OUTROS": "MAPFRE CONSUMO CIRURGICO",
 
@@ -210,18 +206,15 @@ def mapear_agregadores(df_subtotais, df_itens):
         "11 - FÁRMACOS - MEDICAMENTOS": "FARMACIAS/MEDICAMENTOS",
         "PISO DE SALA": "MAPFRE BLOCO OPERATORIO",
 
-        # Consultas
         "CONSULTA EXTERNA": "CONSULTAS ESPECIALIDADE",
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
 
-        # Material ortopédico
         "28 - MATERIAL DE CONSUMO CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "CLINICO - MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "MAT. ORTOPEDICO": "MATERIAL ORTOPEDICO",
         "28 - MATERIAL DE CON": "MATERIAL ORTOPEDICO",
         "28 - MATERIAL DE CONSUMO": "MATERIAL ORTOPEDICO",
 
-        # MCDT genérico (fallback)
         "MCDT": "MEIOS AUXILIARES DIAGNOSTICO"
     }
 
@@ -233,35 +226,38 @@ def mapear_agregadores(df_subtotais, df_itens):
 
         # --- Caso especial: MCDT ---
         if "MCDT" in secao.upper():
-
             subtotais_mcdt = {}
+            soma_subtipos = 0.0
 
             for _, item in df_itens.iterrows():
                 descricao = item["Descrição"]
+                val = item["Val.Total(s/IVA)"]
+                if pd.isna(val):
+                    continue
+
                 subtipo = detetar_subtipo_mcdt(descricao)
-
                 if subtipo:
-                    subtotais_mcdt.setdefault(subtipo, 0)
-                    subtotais_mcdt[subtipo] += item["Val.Total(s/IVA)"]
+                    subtotais_mcdt.setdefault(subtipo, 0.0)
+                    subtotais_mcdt[subtipo] += float(val)
+                    soma_subtipos += float(val)
 
-            # Se não encontrou subtipo → vai para o genérico
-            if not subtotais_mcdt:
-                linhas_agregadas.append({
-                    "Descrição TRON": "MEIOS AUXILIARES DIAGNOSTICO",
-                    "Código TRON": codigos_tron["MEIOS AUXILIARES DIAGNOSTICO"],
-                    "Total declarado (€)": total
-                })
-                continue
-
-            # Criar linhas TRON por subtipo
+            # Criar linhas TRON por subtipo (RM, RX, TC, EMG, ECO)
             for subtipo, valor in subtotais_mcdt.items():
                 agregador = mcdt_subtipos[subtipo]
                 codigo = codigos_tron[agregador]
-
                 linhas_agregadas.append({
                     "Descrição TRON": agregador,
                     "Código TRON": codigo,
-                    "Total declarado (€)": valor
+                    "Total declarado (€)": round(valor, 2)
+                })
+
+            # Restante do MCDT → ENFERMAGEM CONTRATADA
+            restante = round(total - soma_subtipos, 2)
+            if restante > 0.01:
+                linhas_agregadas.append({
+                    "Descrição TRON": "ENFERMAGEM CONTRATADA",
+                    "Código TRON": codigos_tron["ENFERMAGEM CONTRATADA"],
+                    "Total declarado (€)": restante
                 })
 
             continue
@@ -276,21 +272,17 @@ def mapear_agregadores(df_subtotais, df_itens):
             "Total declarado (€)": total
         })
 
-    # Criar DataFrame
     df_final = pd.DataFrame(linhas_agregadas)
 
-    # 🔥 AGRUPAR POR CÓDIGO TRON + DESCRIÇÃO TRON
     df_final = (
         df_final.groupby(["Descrição TRON", "Código TRON"], as_index=False)
                 .agg({"Total declarado (€)": "sum"})
     )
 
-    # ➕ Adicionar total da fatura
     total_fatura = df_final["Total declarado (€)"].sum()
     df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
 
     return df_final
-
 
 # ---------------------------------------------------------
 # 7. Exportar para Excel
@@ -360,4 +352,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
