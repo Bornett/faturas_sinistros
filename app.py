@@ -122,7 +122,7 @@ def extrair_subtotais(linhas):
     for linha in linhas:
 
         # Junta linhas partidas "Contagem e" + "valor (€) ..."
-        if "Contagem e" in linha:
+        if re.search(r"\bContagem\s+e\b", linha):
             buffer = linha
             continue
 
@@ -130,26 +130,35 @@ def extrair_subtotais(linhas):
             linha = buffer + " " + linha
             buffer = ""
 
-        # Regex robusto para apanhar todas as variações
-        m = re.search(
-            r"Contagem\s+e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)",
+        # 1) Caso clássico: total no fim da linha
+        m1 = re.search(
+            r"Contagem\s+e\s+valor\s+\(€\)\s+(.*?)\s+(\d+,\d+)\s*$",
             linha
         )
+        if m1:
+            secao = normalizar_secao(m1.group(1).strip())
+            total = float(m1.group(2).replace(",", "."))
+            subtotais.append({"Secção": secao, "Total declarado (€)": total})
+            continue
 
-        if m:
-            secao = m.group(1).strip()
-            total = float(m.group(2).replace(",", "."))
+        # 2) Caso Boavista: total NÃO está no fim da linha
+        # Exemplo:
+        # Contagem e valor (€) 29 - MATERIAL DE CONSUMO ... 142,00 ... 50,38 ...
+        m2 = re.search(
+            r"Contagem\s+e\s+valor\s+\(€\)\s+(.*?)(\s+\d+,\d+)",
+            linha
+        )
+        if m2:
+            secao = normalizar_secao(m2.group(1).strip())
 
-            # NORMALIZAÇÃO AUTOMÁTICA
-            secao = normalizar_secao(secao)
-
-            subtotais.append({
-                "Secção": secao,
-                "Total declarado (€)": total
-            })
+            # Procurar o primeiro número da linha (é o total declarado)
+            numeros = re.findall(r"\d+,\d+", linha)
+            if numeros:
+                total = float(numeros[0].replace(",", "."))
+                subtotais.append({"Secção": secao, "Total declarado (€)": total})
+            continue
 
     return pd.DataFrame(subtotais)
-
 
 # ---------------------------------------------------------
 # 6. Normalização automática das secções
@@ -424,3 +433,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
+
