@@ -239,9 +239,13 @@ def mapear_agregadores(df_subtotais, df_itens):
         if "MCDT" in secao.upper():
 
             # Filtrar apenas os itens que pertencem ao bloco MCDT
-            itens_mcdt = df_itens[
-                df_itens["Descrição"].str.contains("ECG|ELECTROCARDIO|MCDT", case=False, na=False)
-            ]
+            inicio = df_itens.index[df_itens["Descrição"].str.contains("^MCDT$", case=False, na=False)]
+            fim = df_itens.index[df_itens["Descrição"].str.contains("Contagem e valor.*MCDT", case=False, na=False)]
+
+            if len(inicio) > 0 and len(fim) > 0:
+                itens_mcdt = df_itens.loc[inicio[0]+1 : fim[0]-1]
+            else:
+                itens_mcdt = pd.DataFrame()
 
             subtotais_mcdt = {}
             soma_subtipos = 0.0
@@ -347,8 +351,8 @@ def processar_fatura(pdf_file):
                 df_itens[col]
                 .astype(str)
                 .str.replace(",", ".", regex=False)
-                .pipe(pd.to_numeric, errors="coerce")
-                .round(2)  # ← CORREÇÃO DO PROBLEMA DOS 15,95
+                .str.extract(r"(\d+\.\d{1,2})")[0]   # ← FORÇA VALORES VISÍVEIS
+                .astype(float)
             )
 
     subtotais = extrair_subtotais(linhas)
