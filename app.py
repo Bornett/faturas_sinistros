@@ -115,39 +115,31 @@ def extrair_itens(linhas):
 # ---------------------------------------------------------
 def extrair_subtotais(linhas):
     subtotais = []
-    buffer = ""
 
     for linha in linhas:
-        # Junta linhas partidas (ex: "Contagem e" + "valor (€) MCDT")
-        if "Contagem" in linha:
-            buffer = linha
-            continue
+        if "Contagem" in linha and "valor" in linha and "€" in linha:
+            nome_match = re.search(r"valor.*?€\)?\s*(.*)", linha)
+            if not nome_match:
+                continue
+            resto = nome_match.group(1)
 
-        if buffer:
-            linha = buffer + " " + linha
-            buffer = ""
+            numeros = re.findall(r"\d+,\d+", resto)
+            if len(numeros) < 2:
+                continue
 
-        if "valor" in linha and "€" in linha:
-            numeros = re.findall(r"\d+,\d+", linha)
-            if len(numeros) >= 2:
-                qtd_str = numeros[0]
-                total_str = numeros[-1]
+            qtd_str = numeros[0]
+            total_str = numeros[-1]
 
-                # Extrair nome da secção
-                secao = re.sub(r"Contagem.*?valor.*?€\)?", "", linha)
-                secao = secao.replace(qtd_str, "").strip()
-
-                subtotais.append({
-                    "Secção": secao,
-                    "Qtd declarada": float(qtd_str.replace(",", ".")),
-                    "Total declarado (€)": float(total_str.replace(",", "."))
-                })
+            subtotais.append({
+                "Secção": resto.split(numeros[0])[0].strip(),
+                "Qtd declarada": float(qtd_str.replace(",", ".")),
+                "Total declarado (€)": float(total_str.replace(",", "."))
+            })
 
     return pd.DataFrame(subtotais)
 
-
 # ---------------------------------------------------------
-# Subtipos MCDT → Agregadores TRON (mantemos, se quiseres evoluir depois)
+# Subtipos MCDT → Agregadores TRON (mantemos, se precisares no futuro)
 # ---------------------------------------------------------
 mcdt_subtipos = {
     "RM": "MEIOS AUX DIAGNOST RMN",
@@ -185,7 +177,7 @@ codigos_tron = {
 }
 
 # ---------------------------------------------------------
-# Função para detetar subtipo MCDT (se um dia quiseres voltar a desdobrar)
+# Função para detetar subtipo MCDT (se quiseres voltar a desdobrar)
 # ---------------------------------------------------------
 def detetar_subtipo_mcdt(descricao):
     desc = descricao.upper()
@@ -205,8 +197,9 @@ def detetar_subtipo_mcdt(descricao):
 
 # ---------------------------------------------------------
 # 6. Mapear agregadores TRON
-#    - SEM recalcular valores (usa sempre o total visível no PDF)
-#    - MCDT ELECTROCARDIOGRAMA → 217 com o total da secção
+#   - MCDT: usar SEMPRE o subtotal visível
+#   - ECG → 217 (MEIOS AUXILIAR DIAGNOST - OUTROS)
+#   - resto MCDT → 204 (ENFERMAGEM CONTRATADA)
 # ---------------------------------------------------------
 def mapear_agregadores(df_subtotais, df_itens):
     mapa = {
@@ -236,28 +229,32 @@ def mapear_agregadores(df_subtotais, df_itens):
     linhas_agregadas = []
 
     for _, row in df_subtotais.iterrows():
-        secao = str(row["Secção"])
-        total = float(row["Total declarado (€)"])
+        secao = row["Secção"]
+        total = row["Total declarado (€)"]
 
         # --- Caso especial: MCDT ---
         if "MCDT" in secao.upper():
-            # Queremos sempre o valor visível no PDF (total da secção)
-            # e, neste caso, se houver ELECTROCARDIOGRAMA - ECG, vai para 217
+            # Queremos SEMPRE o valor visível no PDF (total)
+            # e decidir só para onde vai (217 ou 204)
+
+            # Ver se há ECG nos itens
             tem_ecg = False
-            for _, item in df_itens.iterrows():
-                desc_item = str(item.get("Descrição", "")).upper()
-                if "ELECTROCARDIOGRAMA - ECG" in desc_item:
-                    tem_ecg = True
-                    break
+            if not df_itens.empty:
+                for _, it in df_itens.iterrows():
+                    desc = str(it.get("Descrição", "")).upper()
+                    if "ELECTROCARDIOGRAMA - ECG" in desc:
+                        tem_ecg = True
+                        break
 
             if tem_ecg:
+                # Vai para 217 - MEIOS AUXILIAR DIAGNOST - OUTROS
                 linhas_agregadas.append({
                     "Descrição TRON": "MEIOS AUXILIAR DIAGNOST - OUTROS",
                     "Código TRON": codigos_tron["MEIOS AUXILIAR DIAGNOST - OUTROS"],
                     "Total declarado (€)": total
                 })
             else:
-                # Se algum dia houver MCDT sem ECG, cai aqui (podes ajustar depois)
+                # Sem ECG: tudo para ENFERMAGEM CONTRATADA (204)
                 linhas_agregadas.append({
                     "Descrição TRON": "ENFERMAGEM CONTRATADA",
                     "Código TRON": codigos_tron["ENFERMAGEM CONTRATADA"],
@@ -267,12 +264,7 @@ def mapear_agregadores(df_subtotais, df_itens):
             continue
 
         # --- Caso normal ---
-        agregador = "OUTROS"
-        for chave, destino in mapa.items():
-            if chave.upper() in secao.upper():
-                agregador = destino
-                break
-
+        agregador = mapa.get(secao, "OUTROS")
         codigo = codigos_tron.get(agregador, "TR999")
 
         linhas_agregadas.append({
@@ -284,7 +276,7 @@ def mapear_agregadores(df_subtotais, df_itens):
     # Criar DataFrame
     df_final = pd.DataFrame(linhas_agregadas)
 
-    # Se não há linhas, devolve só TOTAL DA FATURA = 0
+    # Se não há linhas, devolve só TOTAL DA FATURA = 0 (evita KeyError)
     if df_final.empty:
         df_final = pd.DataFrame(
             [["TOTAL DA FATURA", "", 0.0]],
@@ -298,7 +290,7 @@ def mapear_agregadores(df_subtotais, df_itens):
                 .agg({"Total declarado (€)": "sum"})
     )
 
-    # Adicionar total da fatura (soma simples, sem mexer nos valores)
+    # Adicionar total da fatura
     total_fatura = df_final["Total declarado (€)"].sum()
     df_final.loc[len(df_final.index)] = ["TOTAL DA FATURA", "", total_fatura]
 
@@ -373,4 +365,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"⚠️ Erro ao processar a fatura: {str(e)}")
-
