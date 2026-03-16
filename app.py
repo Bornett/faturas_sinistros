@@ -139,7 +139,7 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 6. NOVO — Extrair bloco MCDT (robusto)
+# 6. Extrair bloco MCDT (robusto)
 # ---------------------------------------------------------
 def extrair_bloco_mcdt(linhas):
     inicio = None
@@ -212,7 +212,7 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
     itens_mcdt = []
     for linha in bloco_mcdt:
         m = re.search(
-            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+\d+,\d+\s+(\d+,\d+)",
+            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+\d+,\d+\s+\d+,\d{5}\s+(\d+,\d+)",
             linha
         )
         if m:
