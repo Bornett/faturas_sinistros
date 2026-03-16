@@ -287,6 +287,9 @@ def exportar_excel(df):
 def processar_fatura(pdf_file):
     linhas, texto = extrair_linhas_e_texto(pdf_file)
 
+    st.write(linhas)
+
+
     dados_cliente = extrair_dados_cliente(texto)
     dados_gerais = extrair_dados_gerais(texto)
 
