@@ -79,7 +79,7 @@ def extrair_dados_gerais(texto):
     return dados
 
 # ---------------------------------------------------------
-# 4. Extrair itens
+# 4. Extrair itens (linhas completas)
 # ---------------------------------------------------------
 def extrair_itens(linhas):
     itens = []
@@ -139,7 +139,48 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# Códigos TRON
+# 6. NOVO — Extrair bloco MCDT corretamente
+# ---------------------------------------------------------
+def extrair_bloco_mcdt(linhas):
+    inicio = None
+    fim = None
+
+    for i, linha in enumerate(linhas):
+        if "MCDT" in linha and inicio is None:
+            inicio = i
+        if "Contagem e valor (€) MCDT" in linha:
+            fim = i
+            break
+
+    if inicio is None or fim is None:
+        return []
+
+    bloco = linhas[inicio:fim]
+    return bloco
+
+# ---------------------------------------------------------
+# 7. Classificação dos itens MCDT
+# ---------------------------------------------------------
+def classificar_item_mcdt(descricao):
+    desc = descricao.upper()
+
+    if "ECG" in desc or "ELECTROCARDIO" in desc:
+        return "MEIOS AUXILIAR DIAGNOST - OUTROS"
+    if "RX" in desc:
+        return "MEIOS AUXILIAR DIAG RX"
+    if "TC" in desc:
+        return "MEIOS AUX DIAGNOST TAC"
+    if "RM" in desc:
+        return "MEIOS AUX DIAGNOST RMN"
+    if "ECO" in desc:
+        return "MEIOS AUX DIAGNOST ECOGRAFIA"
+    if "EMG" in desc:
+        return "MEIOS AUX DIAGNOST EMG"
+
+    return "ENFERMAGEM CONTRATADA"
+
+# ---------------------------------------------------------
+# 8. Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
     "MAPFRE CONSUM CIRURGIA": "247",
@@ -161,50 +202,38 @@ codigos_tron = {
 }
 
 # ---------------------------------------------------------
-# 6. Classificação dos itens MCDT
+# 9. Mapear agregadores TRON
 # ---------------------------------------------------------
-def classificar_item_mcdt(descricao):
-    desc = descricao.upper()
-
-    if "ECG" in desc or "ELECTROCARDIO" in desc:
-        return "MEIOS AUXILIAR DIAGNOST - OUTROS"
-    if "RX" in desc:
-        return "MEIOS AUXILIAR DIAG RX"
-    if "TC" in desc:
-        return "MEIOS AUX DIAGNOST TAC"
-    if "RM" in desc:
-        return "MEIOS AUX DIAGNOST RMN"
-    if "ECO" in desc:
-        return "MEIOS AUX DIAGNOST ECOGRAFIA"
-    if "EMG" in desc:
-        return "MEIOS AUX DIAGNOST EMG"
-
-    return "ENFERMAGEM CONTRATADA"
-
-# ---------------------------------------------------------
-# 7. Mapear agregadores TRON
-# ---------------------------------------------------------
-def mapear_agregadores(df_subtotais, df_itens):
+def mapear_agregadores(df_subtotais, df_itens, linhas):
 
     linhas_agregadas = []
 
-    # 1) PROCESSAR MCDT ITEM A ITEM
-    itens_mcdt = df_itens[df_itens["Descrição"].str.contains("RX|TC|RM|ECO|EMG|ECG|INJE", case=False, na=False)]
+    # --- 1) Extrair bloco MCDT ---
+    bloco_mcdt = extrair_bloco_mcdt(linhas)
 
-    if not itens_mcdt.empty:
-        for _, item in itens_mcdt.iterrows():
-            descricao = item["Descrição"]
-            valor = float(item["Val.Total(s/IVA)"])
-            categoria = classificar_item_mcdt(descricao)
-            codigo = codigos_tron[categoria]
+    # Extrair itens dentro do bloco MCDT
+    itens_mcdt = []
+    for linha in bloco_mcdt:
+        m = re.search(r"(\d{2}/\d{2}/\d{4}).*?([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)", linha)
+        if m:
+            data = m.group(1)
+            codigo = m.group(2)
+            descricao = m.group(3)
+            valor = float(m.group(4).replace(",", "."))
+            itens_mcdt.append((descricao, valor))
 
-            linhas_agregadas.append({
-                "Descrição TRON": categoria,
-                "Código TRON": codigo,
-                "Total declarado (€)": valor
-            })
+    # Classificar cada item MCDT
+    for descricao, valor in itens_mcdt:
+        categoria = classificar_item_mcdt(descricao)
+        codigo = codigos_tron[categoria]
 
-    # 2) PROCESSAR AS OUTRAS SECÇÕES PELO SUBTOTAL DO PDF
+        linhas_agregadas.append({
+            "Descrição TRON": categoria,
+            "Código TRON": codigo,
+            "Total declarado (€)": valor
+        })
+
+    # --- 2) Processar outras secções pelo subtotal do PDF ---
     mapa = {
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
         "11 - FÁRMACOS": "FARMACIAS/MEDICAMENTOS",
@@ -244,7 +273,7 @@ def mapear_agregadores(df_subtotais, df_itens):
     return df_final
 
 # ---------------------------------------------------------
-# 8. Exportar para Excel
+# 10. Exportar para Excel
 # ---------------------------------------------------------
 def exportar_excel(df):
     output = BytesIO()
@@ -253,7 +282,7 @@ def exportar_excel(df):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 9. Processar fatura
+# 11. Processar fatura
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas, texto = extrair_linhas_e_texto(pdf_file)
@@ -273,12 +302,12 @@ def processar_fatura(pdf_file):
             df_itens[col] = pd.to_numeric(df_itens[col], errors="coerce")
 
     subtotais = extrair_subtotais(linhas)
-    agregados = mapear_agregadores(subtotais, df_itens)
+    agregados = mapear_agregadores(subtotais, df_itens, linhas)
 
     return dados_cliente, dados_gerais, df_itens, subtotais, agregados
 
 # ---------------------------------------------------------
-# 10. Interface Streamlit
+# 12. Interface Streamlit
 # ---------------------------------------------------------
 uploaded_file = st.file_uploader("Carregue a fatura PDF", type="pdf")
 
