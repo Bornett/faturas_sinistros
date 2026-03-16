@@ -139,7 +139,7 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 6. NOVO — Extrair bloco MCDT corretamente
+# 6. Extrair bloco MCDT
 # ---------------------------------------------------------
 def extrair_bloco_mcdt(linhas):
     inicio = None
@@ -155,8 +155,7 @@ def extrair_bloco_mcdt(linhas):
     if inicio is None or fim is None:
         return []
 
-    bloco = linhas[inicio:fim]
-    return bloco
+    return linhas[inicio:fim]
 
 # ---------------------------------------------------------
 # 7. Classificação dos itens MCDT
@@ -164,7 +163,7 @@ def extrair_bloco_mcdt(linhas):
 def classificar_item_mcdt(descricao):
     desc = descricao.upper()
 
-    if "ECG" in desc or "ELECTROCARDIO" in desc:
+    if "ECG" in desc:
         return "MEIOS AUXILIAR DIAGNOST - OUTROS"
     if "RX" in desc:
         return "MEIOS AUXILIAR DIAG RX"
@@ -183,8 +182,6 @@ def classificar_item_mcdt(descricao):
 # 8. Códigos TRON
 # ---------------------------------------------------------
 codigos_tron = {
-    "MAPFRE CONSUM CIRURGIA": "247",
-    "MAPFRE EQUIPA CIRURGICA": "243",
     "MEIOS AUXILIAR DIAGNOST - OUTROS": "217",
     "MEIOS AUXILIAR DIAG RX": "218",
     "MEIOS AUX DIAGNOST TAC": "237",
@@ -192,12 +189,8 @@ codigos_tron = {
     "MEIOS AUX DIAGNOST ECOGRAFIA": "239",
     "MEIOS AUX DIAGNOST EMG": "240",
     "FARMACIAS/MEDICAMENTOS": "206",
-    "MAPFRE BLOCO OPERATORIO": "245",
     "CONSULTAS AT. PERMANENTE": "251",
-    "CONSULTAS ESPECIALIDADE": "252",
-    "MATERIAL ORTOPEDICO": "213",
     "ENFERMAGEM CONTRATADA": "204",
-    "OUTROS": "",
     "TOTAL DA FATURA": ""
 }
 
@@ -211,14 +204,14 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
     # --- 1) Extrair bloco MCDT ---
     bloco_mcdt = extrair_bloco_mcdt(linhas)
 
-    # Extrair itens dentro do bloco MCDT
     itens_mcdt = []
     for linha in bloco_mcdt:
-        m = re.search(r"(\d{2}/\d{2}/\d{4}).*?([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)", linha)
+        m = re.search(
+            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)",
+            linha
+        )
         if m:
-            data = m.group(1)
-            codigo = m.group(2)
-            descricao = m.group(3)
+            descricao = m.group(3).strip()
             valor = float(m.group(4).replace(",", "."))
             itens_mcdt.append((descricao, valor))
 
@@ -233,13 +226,15 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
             "Total declarado (€)": valor
         })
 
-    # --- 2) Processar outras secções pelo subtotal do PDF ---
+    # --- 2) Subtotais das outras secções ---
     mapa = {
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
         "11 - FÁRMACOS": "FARMACIAS/MEDICAMENTOS",
-        "23 - MATERIAL": "MAPFRE CONSUM CIRURGIA",
-        "21 - MATERIAL": "MAPFRE CONSUM CIRURGIA",
-        "29 - MATERIAL": "MAPFRE CONSUM CIRURGIA",
+
+        # ✔ Como escolheste: 21/23/29 → 204
+        "23 - MATERIAL": "ENFERMAGEM CONTRATADA",
+        "21 - MATERIAL": "ENFERMAGEM CONTRATADA",
+        "29 - MATERIAL": "ENFERMAGEM CONTRATADA",
     }
 
     for _, row in df_subtotais.iterrows():
@@ -249,7 +244,7 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
         if "MCDT" in secao.upper():
             continue
 
-        destino = "OUTROS"
+        destino = "ENFERMAGEM CONTRATADA"
         for chave, val in mapa.items():
             if chave in secao.upper():
                 destino = val
