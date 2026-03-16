@@ -147,12 +147,10 @@ def extrair_bloco_mcdt(linhas):
 
     for i, linha in enumerate(linhas):
 
-        # início do bloco MCDT — linha só com "MCDT" (com ou sem espaços)
         if re.match(r"^\s*MCDT\s*$", linha):
             inicio = i
             continue
 
-        # fim do bloco MCDT — linha com contagem e MCDT
         if "Contagem" in linha and "MCDT" in linha:
             fim = i
             break
@@ -206,13 +204,12 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
 
     linhas_agregadas = []
 
-    # --- 1) Extrair bloco MCDT ---
     bloco_mcdt = extrair_bloco_mcdt(linhas)
 
     itens_mcdt = []
     for linha in bloco_mcdt:
         m = re.search(
-            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+\d+,\d+\s+\d+,\d{5}\s+(\d+,\d+)",
+            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)(RX|RM|TC|ECO|EMG|ECG|INJECCAO.*?)\s+\d+,\d+\s+\d+,\d+\s+(\d+,\d+)",
             linha
         )
         if m:
@@ -220,7 +217,6 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
             valor = float(m.group(4).replace(",", "."))
             itens_mcdt.append((descricao, valor))
 
-    # Classificar cada item MCDT
     for descricao, valor in itens_mcdt:
         categoria = classificar_item_mcdt(descricao)
         codigo = codigos_tron[categoria]
@@ -231,12 +227,9 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
             "Total declarado (€)": valor
         })
 
-    # --- 2) Subtotais das outras secções ---
     mapa = {
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
         "11 - FÁRMACOS": "FARMACIAS/MEDICAMENTOS",
-
-        # 21/23/29 → 204
         "23 - MATERIAL": "ENFERMAGEM CONTRATADA",
         "21 - MATERIAL": "ENFERMAGEM CONTRATADA",
         "29 - MATERIAL": "ENFERMAGEM CONTRATADA",
@@ -286,9 +279,6 @@ def exportar_excel(df):
 # ---------------------------------------------------------
 def processar_fatura(pdf_file):
     linhas, texto = extrair_linhas_e_texto(pdf_file)
-
-    st.write(linhas)
-
 
     dados_cliente = extrair_dados_cliente(texto)
     dados_gerais = extrair_dados_gerais(texto)
