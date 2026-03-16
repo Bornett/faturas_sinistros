@@ -139,16 +139,21 @@ def extrair_subtotais(linhas):
     return pd.DataFrame(subtotais)
 
 # ---------------------------------------------------------
-# 6. Extrair bloco MCDT
+# 6. NOVO — Extrair bloco MCDT (robusto)
 # ---------------------------------------------------------
 def extrair_bloco_mcdt(linhas):
     inicio = None
     fim = None
 
     for i, linha in enumerate(linhas):
-        if "MCDT" in linha and inicio is None:
+
+        # início do bloco MCDT — linha só com "MCDT" (com ou sem espaços)
+        if re.match(r"^\s*MCDT\s*$", linha):
             inicio = i
-        if "Contagem e valor (€) MCDT" in linha:
+            continue
+
+        # fim do bloco MCDT — linha com contagem e MCDT
+        if "Contagem" in linha and "MCDT" in linha:
             fim = i
             break
 
@@ -231,7 +236,7 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
         "CONSULTA URGÊNCIA": "CONSULTAS AT. PERMANENTE",
         "11 - FÁRMACOS": "FARMACIAS/MEDICAMENTOS",
 
-        # ✔ Como escolheste: 21/23/29 → 204
+        # 21/23/29 → 204
         "23 - MATERIAL": "ENFERMAGEM CONTRATADA",
         "21 - MATERIAL": "ENFERMAGEM CONTRATADA",
         "29 - MATERIAL": "ENFERMAGEM CONTRATADA",
