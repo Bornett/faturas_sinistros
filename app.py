@@ -207,7 +207,7 @@ def mapear_agregadores(df_subtotais, df_itens, linhas):
     itens_mcdt = []
     for linha in bloco_mcdt:
         m = re.search(
-            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+(\d+,\d+)",
+            r"(\d{2}/\d{2}/\d{4})\s+([A-Z0-9]+)\s+(.*?)\s+\d+,\d+\s+(\d+,\d+)",
             linha
         )
         if m:
